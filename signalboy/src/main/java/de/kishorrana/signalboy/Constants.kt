@@ -4,11 +4,12 @@ import android.os.ParcelUuid
 
 // From Bluetooth Specification – Core (v1.5)
 // s. "BLUETOOTH CORE SPECIFICATION Version 5.3 | Vol 1, Part F"
-const val BLUETOOTH_STATUS_CONNECTION_TIMEOUT: Int = 0x8
+const val GATT_STATUS_SUCCESS: Int = 0x00
+const val GATT_STATUS_CONNECTION_TIMEOUT: Int = 0x08
 
 // Stops scanning after 10 seconds.
 const val SCAN_PERIOD_IN_MILLIS: Long = 10_000L
-const val CONNECT_TIMEOUT_IN_MILLIS: Long = 3_000L
+const val CONNECTION_ATTEMPT_TIMEOUT_IN_MILLIS: Long = 3_000L
 
 internal val OutputService_UUID: ParcelUuid = ParcelUuid.fromString("37410000-b4d1-f445-aa29-989ea26dc614")
 internal val TargetTimestampCharacteristic_UUID: ParcelUuid = ParcelUuid.fromString("37410001-b4d1-f445-aa29-989ea26dc614")

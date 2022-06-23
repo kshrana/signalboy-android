@@ -9,14 +9,11 @@ import android.os.Build
 import android.util.Log
 import androidx.core.content.ContextCompat
 import de.kishorrana.signalboy.client.Client
-import de.kishorrana.signalboy.client.ClientState
 import de.kishorrana.signalboy.client.NoConnectionAttemptsLeftException
+import de.kishorrana.signalboy.client.State
 import de.kishorrana.signalboy.scanner.Scanner
 import kotlinx.coroutines.*
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.dropWhile
-import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.onCompletion
+import kotlinx.coroutines.flow.*
 
 private const val TAG = "SignalboyService"
 
@@ -57,17 +54,20 @@ class SignalboyService(
     private val latestConnectionState =
         MutableStateFlow<ConnectionState>(ConnectionState.Disconnected())
             // Notify `OnConnectionStateUpdateListener` on any updates to `latestConnectionState`.
-            .also {
+            .also { latestConnectionState ->
                 scope.launch {
-                    it.collect { onConnectionStateUpdateListener?.stateUpdated(it) }
+                    latestConnectionState.collect { newValue ->
+                        onConnectionStateUpdateListener?.stateUpdated(newValue)
+                    }
                 }
             }
     private var connecting: Job? = null
-    private var clientConnectionStateObserving: Job? = null
+    private var clientStateObserving: Job? = null
 
     private var onConnectionStateUpdateListener: OnConnectionStateUpdateListener? = null
 
     fun destroy() {
+        client.destroy()
         scope.cancel("Parent SignalboyService-instance will be destroyed.")
     }
 
@@ -162,50 +162,54 @@ class SignalboyService(
             // Try connecting to Peripheral.
             // But first setup observer for Client's connection-state and forward any events to
             // `self`'s `latestConnectionState`-Publisher.
-            clientConnectionStateObserving = scope.launch {
-                client.latestConnectionState
+            clientStateObserving = scope.launch {
+                client.latestState
                     .onCompletion { err ->
-                        Log.d(
-                            TAG, "clientConnectionStateObserving: onCompletion", err
+                        // Observer is expected to complete when `clientStateObserving`-
+                        // Job is cancelled.
+                        Log.v(
+                            TAG, "clientStateObserving: Completion due to error:", err
                         )
                     }
                     // Drop initial "Disconnected"-events as StateFlow emits
                     // initial value on subscribing.
-                    .dropWhile { it is ClientState.Disconnected }
+                    .dropWhile { it is State.Disconnected }
                     .map(::convertFromClientState)
                     .collect { latestConnectionState.value = it }
             }
+
+            val isSuccess: Boolean
             try {
-                client.connect(device)
+                isSuccess = client.connectAsync(device)
             } catch (err: Throwable) {
                 // Cancel client connection-state observing.
-                clientConnectionStateObserving?.cancelAndJoin()
+                clientStateObserving?.cancelAndJoin()
                 throw err
             }
 
-            Log.i(TAG, "Connection with peripheral established successfully.")
+            if (isSuccess)
+                Log.i(TAG, "Successfully connected to peripheral.")
+            else
+                Log.i(TAG, "Failed to connect to peripheral.")
         }
     }
 
     private suspend fun disconnectFromPeripheralAsync() {
-        client.disconnect().also {
-            // Give clientConnectionStateObserving-Job time to process that the peripheral was
+        client.disconnectAsync().also {
+            // Give clientStateObserving-Job time to process that the peripheral was
             // disconnected.
             yield()
         }
-        clientConnectionStateObserving?.cancelAndJoin()
+        clientStateObserving?.cancelAndJoin()
     }
 
     // Helper functions
 
-    private fun convertFromClientState(state: ClientState): ConnectionState {
-        return when (state) {
-            is ClientState.Disconnected -> ConnectionState.Disconnected(
-                state.cause
-            )
-            is ClientState.Connecting -> ConnectionState.Connecting
-            is ClientState.Connected -> ConnectionState.Connected
-        }
+    private fun convertFromClientState(state: State): ConnectionState = when (state) {
+        is State.Disconnected -> ConnectionState.Disconnected(state.cause)
+        is State.Connecting -> ConnectionState.Connecting
+        is State.DiscoveringServices -> ConnectionState.Connecting
+        is State.Connected -> ConnectionState.Connected
     }
 
     private fun publishFailedConnectionState(err: Throwable) {
@@ -226,12 +230,18 @@ class SignalboyService(
 
         try {
             block()
+        } catch (err: MissingRequiredPermissionsException) {
+            errorHandler(err)
         } catch (err: NoCompatiblePeripheralDiscovered) {
             errorHandler(err)
         } catch (err: NoConnectionAttemptsLeftException) {
             errorHandler(err)
-        } catch (err: MissingRequiredPermissionsException) {
-            errorHandler(err)
+        } catch (err: Throwable) {
+            Log.d(
+                TAG, "tryOrPublishFailedConnectionState: Will rethrow unknown exception " +
+                        "without further handling. Error:", err
+            )
+            throw err
         }
     }
 

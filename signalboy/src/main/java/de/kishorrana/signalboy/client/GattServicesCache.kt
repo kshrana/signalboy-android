@@ -7,8 +7,12 @@ internal class GattServicesCache {
 
     fun getServices(address: String): List<BluetoothGattService>? = gattServicesCache[address]
 
-    fun setServices(services: List<BluetoothGattService>?, address: String) {
-        gattServicesCache.clear()
+    fun setServices(services: List<BluetoothGattService>, address: String) {
+        clear()
         gattServicesCache[address] = services
+    }
+
+    fun clear() {
+        gattServicesCache.clear()
     }
 }

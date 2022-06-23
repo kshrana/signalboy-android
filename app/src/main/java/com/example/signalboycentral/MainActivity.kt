@@ -239,9 +239,7 @@ class MainActivity : AppCompatActivity(), ActivityCompat.OnRequestPermissionsRes
     private fun onFabClicked() {
         when (signalboyService.connectionState) {
             is ConnectionState.Disconnected -> connectToSignalboy()
-            is ConnectionState.Connecting -> {
-                /* no-op */
-            }
+            is ConnectionState.Connecting -> disconnectFromSignalboy()
             is ConnectionState.Connected -> disconnectFromSignalboy()
         }
     }
