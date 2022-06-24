@@ -3,6 +3,7 @@ package de.kishorrana.signalboy
 import android.Manifest
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
+import android.bluetooth.BluetoothManager
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
@@ -24,16 +25,18 @@ class SignalboyService(
     // s. Android SDK documentation for a reference implementation:
     // https://developer.android.com/guide/topics/connectivity/bluetooth/connect-gatt-server#setup-bound-service
     private val context: Context,
-    private val bluetoothAdapter: BluetoothAdapter = getDefaultAdapter()
+    private val bluetoothAdapter: BluetoothAdapter = getDefaultAdapter(context)
 ) {
     companion object {
         @JvmStatic
-        fun getDefaultAdapter(): BluetoothAdapter =
-            BluetoothAdapter.getDefaultAdapter() ?: throw Exception(
-                "Unable to obtain a BluetoothAdapter. " +
-                        "Tip: BLE can be required per the <uses-feature> tag " +
-                        "in the AndroidManifest.xml"
-            )
+        fun getDefaultAdapter(context: Context): BluetoothAdapter =
+            with(context.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager) {
+                adapter ?: throw Exception(
+                    "Unable to obtain a BluetoothAdapter. " +
+                            "Tip: BLE can be required per the <uses-feature> tag " +
+                            "in the AndroidManifest.xml"
+                )
+            }
     }
 
     fun interface OnConnectionStateUpdateListener {
