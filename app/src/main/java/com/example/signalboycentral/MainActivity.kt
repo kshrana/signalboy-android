@@ -7,23 +7,23 @@ import android.os.Bundle
 import android.util.Log
 import android.view.Menu
 import android.view.MenuItem
-import android.widget.Button
 import androidx.annotation.DrawableRes
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import com.example.signalboycentral.databinding.ActivityMainBinding
+import com.google.android.material.shape.ShapeAppearanceModel
 import com.google.android.material.snackbar.Snackbar
 import de.kishorrana.signalboy.AlreadyConnectingException
 import de.kishorrana.signalboy.BluetoothDisabledException
 import de.kishorrana.signalboy.NoCompatiblePeripheralDiscovered
 import de.kishorrana.signalboy.Signalboy
-import de.kishorrana.signalboy.SignalboyService.ConnectionState
 import de.kishorrana.signalboy.client.ConnectionTimeoutException
 import de.kishorrana.signalboy.client.NoConnectionAttemptsLeftException
 import de.kishorrana.signalboy.scanner.AlreadyScanningException
 import de.kishorrana.signalboy.scanner.BluetoothLeScanFailed
+import de.kishorrana.signalboy.signalboyservice.SignalboyService.ConnectionState
 
 private const val TAG = "MainActivity"
 
@@ -54,9 +54,12 @@ class MainActivity : AppCompatActivity(), ActivityCompat.OnRequestPermissionsRes
         setSupportActionBar(binding.toolbar)
 
         binding.fab.setOnClickListener { onFabClicked() }
-        binding.root.findViewById<Button>(R.id.button_sync).setOnClickListener {
+        binding.contentMain.buttonSync.setOnClickListener {
             Signalboy.tryTriggerSync()
         }
+        binding.contentMain.imageViewBtStatus.shapeAppearanceModel = ShapeAppearanceModel.builder()
+            .setAllCornerSizes(ShapeAppearanceModel.PILL)
+            .build()
 
         updateView()
     }
@@ -203,28 +206,74 @@ class MainActivity : AppCompatActivity(), ActivityCompat.OnRequestPermissionsRes
     }
 
     private fun updateView() {
+        updateBTStatusIcon()
         updateFab()
     }
 
-    private fun updateFab() {
-        fun setFabIconImage(@DrawableRes resourceId: Int) {
-            binding.fab.setImageDrawable(ContextCompat.getDrawable(this, resourceId))
+    private fun updateBTStatusIcon() {
+        fun setImageViewDrawable(@DrawableRes resourceId: Int) {
+            binding.contentMain.imageViewBtStatus.setImageDrawable(
+                ContextCompat.getDrawable(
+                    this,
+                    resourceId
+                )
+            )
         }
 
-        when (Signalboy.tryGetConnectionState()) {
-            null, is ConnectionState.Disconnected ->
-                setFabIconImage(R.drawable.baseline_bluetooth_black_24dp)
-            is ConnectionState.Connecting ->
-                setFabIconImage(R.drawable.baseline_bluetooth_searching_black_24dp)
-            is ConnectionState.Connected ->
-                setFabIconImage(R.drawable.baseline_bluetooth_connected_black_24dp)
+        when (val connectionState = Signalboy.tryGetConnectionState()) {
+            is ConnectionState.Disconnected -> {
+                binding.contentMain.textPrimary.text = "Disconnected"
+                binding.contentMain.textSecondary.text = "Cause: ${connectionState.cause}"
+                setImageViewDrawable(R.drawable.baseline_bluetooth_black_24dp)
+            }
+
+            is ConnectionState.Connecting -> {
+                binding.contentMain.textPrimary.text = "Connecting"
+                binding.contentMain.textSecondary.text = ""
+                setImageViewDrawable(R.drawable.baseline_bluetooth_searching_black_24dp)
+            }
+
+            is ConnectionState.Connected -> {
+                binding.contentMain.textPrimary.text = "Connected"
+                binding.contentMain.textSecondary.text = ""
+                setImageViewDrawable(R.drawable.baseline_bluetooth_connected_black_24dp)
+            }
+
+            null -> {
+                binding.contentMain.textPrimary.text = "Service not started"
+                binding.contentMain.textSecondary.text = ""
+                setImageViewDrawable(R.drawable.round_power_settings_new_black_24dp)
+            }
+        }
+    }
+
+    private fun updateFab() {
+        fun setFabIconDrawable(@DrawableRes resourceId: Int) {
+            binding.fab.icon = ContextCompat.getDrawable(this, resourceId)
+        }
+
+        when (Signalboy.isStarted) {
+            false -> {
+                binding.fab.text = "Start"
+                setFabIconDrawable(R.drawable.round_play_arrow_black_24dp)
+            }
+            true -> {
+                binding.fab.text = "Stop"
+                setFabIconDrawable(R.drawable.round_stop_black_24dp)
+            }
         }
     }
 
     private fun onFabClicked() {
-        when (Signalboy.tryGetConnectionState()) {
-            null, is ConnectionState.Disconnected -> startSignalboy()
-            is ConnectionState.Connecting, is ConnectionState.Connected -> stopSignalboy()
+        val deferred = {
+            updateView()
+        }
+
+        if (!Signalboy.isStarted) {
+            startSignalboy()
+            deferred()
+        } else {
+            stopSignalboy(deferred)
         }
     }
 
@@ -344,7 +393,7 @@ class MainActivity : AppCompatActivity(), ActivityCompat.OnRequestPermissionsRes
         requestNextPermission()
     }
 
-    private fun stopSignalboy() {
-        Signalboy.stop()
+    private fun stopSignalboy(completion: (() -> Unit)? = null) {
+        Signalboy.stop(completion)
     }
 }

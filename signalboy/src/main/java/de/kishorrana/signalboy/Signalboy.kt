@@ -8,12 +8,17 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.util.Log
 import androidx.core.content.ContextCompat
+import de.kishorrana.signalboy.signalboyservice.SignalboyService
 import kotlinx.coroutines.*
 
 private const val TAG = "Signalboy"
 
 class Signalboy {
     companion object {
+        @JvmStatic
+        val isStarted: Boolean
+            get() = service != null
+
         private val scope: CoroutineScope
 
         init {
@@ -78,14 +83,12 @@ class Signalboy {
          *
          */
         @JvmStatic
-        fun start(
-            context: Context,
-            bluetoothAdapter: BluetoothAdapter
-        ) {
+        fun start(context: Context, bluetoothAdapter: BluetoothAdapter) {
+            if (service != null)
+                throw IllegalStateException("Signalboy Service is already started.")
+
             service = makeSignalboyService(context, bluetoothAdapter)
                 .apply {
-                    tryConnectToPeripheral()
-
                     serviceStateObserving?.cancel()
                     serviceStateObserving = scope.launch {
                         latestConnectionState.collect { newValue ->
@@ -95,12 +98,33 @@ class Signalboy {
                             }
                         }
                     }
+
+                    tryConnectToPeripheral()
                 }
         }
 
         @JvmStatic
-        fun stop() {
-            service?.tryDisconnectFromPeripheral()
+        fun stop(completion: (() -> Unit)? = null) {
+            scope.launch {
+                service?.run {
+                    try {
+                        withTimeout(3_000L) {
+                            disconnectFromPeripheralAsync()
+                        }
+                    } finally {
+                        destroy()
+                    }
+                }
+
+                withContext(Dispatchers.Main) {
+                    yield() // Allow connection-state to propagate before cancelling the observer.
+                    serviceStateObserving?.cancelAndJoin()
+
+                    service = null
+
+                    completion?.invoke()
+                }
+            }
         }
 
         /**

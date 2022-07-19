@@ -1,9 +1,10 @@
-package de.kishorrana.signalboy
+package de.kishorrana.signalboy.signalboyservice
 
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.content.Context
 import android.util.Log
+import de.kishorrana.signalboy.*
 import de.kishorrana.signalboy.client.Client
 import de.kishorrana.signalboy.client.State
 import de.kishorrana.signalboy.client.util.hasAllSignalboyGattAttributes
@@ -47,7 +48,7 @@ class SignalboyService internal constructor(
         )
     }
 
-    private val client by lazy { Client(context) }
+    private val client by lazy { Client(context, parentJob = scope.coroutineContext.job) }
     private val syncService by lazy { SyncService() }
 
     private val _latestConnectionState =
@@ -74,9 +75,16 @@ class SignalboyService internal constructor(
 
     fun tryDisconnectFromPeripheral() {
         scope.launch {
-            tryOrPublishFailedConnectionState { disconnectFromPeripheralAsync(null) }
+            try {
+                disconnectFromPeripheralAsync()
+            } catch (err: Throwable) {
+                Log.v(TAG, "tryDisconnectFromPeripheral() - Discarding error:", err)
+            }
         }
     }
+
+    // Disconnect gracefully
+    suspend fun disconnectFromPeripheralAsync() = disconnectFromPeripheralAsync(null)
 
     /**
      * Triggers sync manually (process will be performed asynchronously without blocking).
@@ -178,7 +186,7 @@ class SignalboyService internal constructor(
             stopSyncService()
             clientStateObserving?.cancelAndJoin()
         } catch (err: Throwable) {
-            Log.e(
+            Log.v(
                 TAG,
                 "disconnectFromPeripheralAsync() - Encountered error during " +
                         "disconnect-attempt. Will still disconnect from peripheral and rethrow " +
@@ -206,29 +214,28 @@ class SignalboyService internal constructor(
     }
 
     //region Helper
-    private fun publishConnectionFailure(err: Throwable) {
-        _latestConnectionState.value = ConnectionState.Disconnected(err)
-    }
-
     private suspend fun <R> tryOrPublishFailedConnectionState(
         block: suspend () -> R
     ) {
         try {
             block()
+        } catch (cancellationError: CancellationException) {
+            // Connection attempt was cancelled gracefully.
+            _latestConnectionState.value = ConnectionState.Disconnected(null)
         } catch (err: Throwable) {
-            publishConnectionFailure(err)
+            _latestConnectionState.value = ConnectionState.Disconnected(err)
         }
     }
 
     private fun CoroutineScope.launchSyncService(client: Client, attempt: Int = 1) {
-        Log.i(TAG, "Launching SyncService (attempt=$attempt).")
+        Log.v(TAG, "Launching SyncService (attempt=$attempt).")
         if (syncServiceCoroutineContext?.isActive == true) {
             throw IllegalStateException("Sync Service is already running.")
         }
 
         val childJob = Job(coroutineContext.job) + CoroutineName("SyncService")
         val exceptionHandler = CoroutineExceptionHandler { _, err ->
-            Log.e(TAG, "SyncService (job=$childJob) failed with error:", err)
+            Log.i(TAG, "SyncService (job=$childJob) failed with error:", err)
             // Stop service before next startup attempt.
             stopSyncService()
             childJob.cancel()

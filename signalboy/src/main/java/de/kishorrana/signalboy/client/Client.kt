@@ -15,16 +15,13 @@ import de.kishorrana.signalboy.client.util.readCharacteristic
 import de.kishorrana.signalboy.client.util.setCharacteristicNotification
 import de.kishorrana.signalboy.client.util.writeCharacteristic
 import de.kishorrana.signalboy.client.util.writeDescriptor
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.cancel
+import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
-import kotlinx.coroutines.launch
 import java.util.*
 
 private const val TAG = "SignalboyClient"
 
-internal class Client(context: Context) {
+internal class Client(context: Context, parentJob: Job? = null) {
     interface Endpoint {
         abstract class Characteristic : Endpoint {
             abstract val serviceUUID: UUID
@@ -38,7 +35,9 @@ internal class Client(context: Context) {
     val latestState: StateFlow<State>
         get() = stateManager.latestState
 
-    private val scope = CoroutineScope(Dispatchers.Default)
+    private val scope = CoroutineScope(
+        Dispatchers.Default + Job(parentJob) + CoroutineName("Client")
+    )
 
     private val gattCallback = ClientBluetoothGattCallback(scope)
     private val stateManager = StateManager(context, gattCallback, scope)
