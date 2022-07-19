@@ -8,6 +8,7 @@ import android.util.Log
 import de.kishorrana.signalboy.BluetoothDisabledException
 import de.kishorrana.signalboy.MissingRequiredPermissionsException
 import kotlinx.coroutines.*
+import java.util.*
 
 private const val TAG = "SignalboyScanner"
 
@@ -29,7 +30,7 @@ internal class Scanner(private val bluetoothAdapter: BluetoothAdapter) {
     /**
      * Discover peripherals, optionally using a filter.
      *
-     * @param serviceUUID if specified, only Peripherals advertising a service with the
+     * @param serviceUUIDFilter if specified, only Peripherals advertising a service with the
      * specified UUID will be returned in the results.
      * @param scanTimeout the scan will timeout after the specified timeout (in milliseconds).
      * @param shouldCancelAfterFirstMatch if `true`, scanning might be canceled before the timeout,
@@ -38,7 +39,7 @@ internal class Scanner(private val bluetoothAdapter: BluetoothAdapter) {
      * @return a list consisting of the discovered peripherals.
      */
     suspend fun discoverPeripherals(
-        serviceUUID: ParcelUuid?,
+        serviceUUIDFilter: UUID?,
         scanTimeout: Long,
         shouldCancelAfterFirstMatch: Boolean = false
     ): List<BluetoothDevice> = coroutineScope {
@@ -47,7 +48,7 @@ internal class Scanner(private val bluetoothAdapter: BluetoothAdapter) {
         withContext(Dispatchers.IO) {
             Log.v(TAG, "discoverPeripherals: I'm working in thread ${Thread.currentThread().name}")
 
-            startScan(serviceUUID, shouldCancelAfterFirstMatch)
+            startScan(serviceUUIDFilter?.let(::ParcelUuid), shouldCancelAfterFirstMatch)
             scanTimeoutJob = launch {
                 Log.d(TAG, "Waiting for scan to complete...")
                 delay(scanTimeout)

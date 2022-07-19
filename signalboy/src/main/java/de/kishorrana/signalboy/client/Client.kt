@@ -2,38 +2,62 @@ package de.kishorrana.signalboy.client
 
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothGatt
-import android.bluetooth.BluetoothGattCallback
-import android.bluetooth.BluetoothProfile
+import android.bluetooth.BluetoothGattDescriptor
 import android.content.Context
 import android.util.Log
-import com.tinder.StateMachine
-import de.kishorrana.signalboy.CONNECTION_ATTEMPT_TIMEOUT_IN_MILLIS
-import de.kishorrana.signalboy.GATT_STATUS_CONNECTION_TIMEOUT
+import de.kishorrana.signalboy.CLIENT_CONFIGURATION_DESCRIPTOR_UUID
 import de.kishorrana.signalboy.GATT_STATUS_SUCCESS
-import de.kishorrana.signalboy.MissingRequiredPermissionsException
-import de.kishorrana.signalboy.client.Event.*
+import de.kishorrana.signalboy.client.ClientBluetoothGattCallback.GattOperationCallback.*
+import de.kishorrana.signalboy.client.Event.OnConnectionRequested
+import de.kishorrana.signalboy.client.Event.OnDisconnectRequested
 import de.kishorrana.signalboy.client.State.*
-import kotlinx.coroutines.*
+import de.kishorrana.signalboy.client.util.readCharacteristic
+import de.kishorrana.signalboy.client.util.setCharacteristicNotification
+import de.kishorrana.signalboy.client.util.writeCharacteristic
+import de.kishorrana.signalboy.client.util.writeDescriptor
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.launch
+import java.util.*
 
 private const val TAG = "SignalboyClient"
-private typealias VoidCallback = () -> Unit
 
-internal class Client(val context: Context) {
+internal class Client(context: Context) {
+    interface Endpoint {
+        abstract class Characteristic : Endpoint {
+            abstract val serviceUUID: UUID
+            abstract val characteristicUUID: UUID
+        }
+    }
+
+    // Reusing the StateManager's state here.
     val state: State
         get() = stateManager.state
     val latestState: StateFlow<State>
         get() = stateManager.latestState
 
-    private val stateManager = StateManager()
-    private val gattServicesCache = GattServicesCache()
+    private val scope = CoroutineScope(Dispatchers.Default)
+
+    private val gattCallback = ClientBluetoothGattCallback(scope)
+    private val stateManager = StateManager(context, gattCallback, scope)
+
+    // First Pair being the key: <ServiceUUID, CharacteristicUUID>
+    private val notificationSubscriptions =
+        mutableListOf<Pair<Pair<UUID, UUID>, NotificationSubscription>>()
+
+    init {
+        setupStateManagerObserving()
+        setupGattCallbackObserving()
+    }
 
     fun destroy() {
-        stateManager.destroy()
+        scope.cancel("Parent Client-instance will be destroyed.")
     }
 
     suspend fun connectAsync(device: BluetoothDevice, retryCount: Int = 3): Boolean {
-        connect(device, retryCount)
+        triggerConnect(device, retryCount)
 
         // await connect result
         return stateManager.latestState
@@ -43,7 +67,7 @@ internal class Client(val context: Context) {
                         state.cause?.let { throw it }   // Disconnected due to connection error
                             ?: false    // Disconnected gracefully (by user-request?)
                     }
-                    is Connecting, is DiscoveringServices -> null
+                    is Connecting -> null
                     is Connected -> true
                 }
             }
@@ -51,329 +75,307 @@ internal class Client(val context: Context) {
     }
 
     suspend fun disconnectAsync() {
-        disconnect().also {
-            // await disconnect
-            stateManager.latestState
-                .takeWhile { it !is Disconnected }
-                .collect()
+        triggerDisconnect()
+        // await disconnect
+        stateManager.latestState
+            .takeWhile { it !is Disconnected }
+            .collect()
+    }
+
+    /**
+     * Read gatt characteristic
+     *
+     * @param characteristic
+     * @throws [FailedToStartAsyncOperationException], [AsyncOperationFailedException]
+     */
+    suspend fun readGattCharacteristicAsync(
+        service: UUID,
+        characteristic: UUID
+    ): ByteArray {
+        readGattCharacteristic(service, characteristic)
+
+        val result = gattCallback.asyncOperationCallbackFlow
+            .mapNotNull { it as? CharacteristicReadCallback }
+            .first()
+
+        if (characteristic != result.characteristic.uuid)
+            throw IllegalStateException(
+                "Received result for wrong characteristic. " +
+                        "(characteristic.uuid=${characteristic} " +
+                        "result.characteristic.uuid=${result.characteristic.uuid})"
+            )
+
+        if (result.status != GATT_STATUS_SUCCESS)
+            throw AsyncOperationFailedException(result.status)
+
+        return result.characteristic.value
+    }
+
+    fun readGattCharacteristic(
+        service: UUID,
+        characteristic: UUID
+    ) {
+        with(getGattClientOrThrow()) {
+            readCharacteristic(service, characteristic)
         }
     }
 
-    fun connect(device: BluetoothDevice, retryCount: Int = 3) {
+    /**
+     * Write gatt characteristic
+     *
+     * @param characteristic
+     * @param data
+     * @param shouldWaitForResponse
+     * @throws [FailedToStartAsyncOperationException], [AsyncOperationFailedException]
+     */
+    suspend fun writeGattCharacteristicAsync(
+        service: UUID,
+        characteristic: UUID,
+        data: ByteArray,
+        shouldWaitForResponse: Boolean = false
+    ) {
+        writeGattCharacteristic(service, characteristic, data, shouldWaitForResponse)
+
+        val result = gattCallback.asyncOperationCallbackFlow
+            .mapNotNull { it as? CharacteristicWriteCallback }
+            .first()
+
+        if (characteristic != result.characteristic.uuid)
+            throw IllegalStateException(
+                "Received result for wrong characteristic. " +
+                        "(characteristic.uuid=${characteristic} " +
+                        "result.characteristic.uuid=${result.characteristic.uuid})"
+            )
+
+        if (result.status != GATT_STATUS_SUCCESS)
+            throw AsyncOperationFailedException(result.status)
+    }
+
+    fun writeGattCharacteristic(
+        service: UUID,
+        characteristic: UUID,
+        data: ByteArray,
+        shouldWaitForResponse: Boolean = false
+    ) {
+        with(getGattClientOrThrow()) {
+            writeCharacteristic(service, characteristic, data, shouldWaitForResponse)
+        }
+    }
+
+    suspend fun writeGattDescriptorAsync(
+        service: UUID,
+        characteristic: UUID,
+        descriptor: UUID,
+        data: ByteArray
+    ) {
+        writeGattDescriptor(service, characteristic, descriptor, data)
+
+        val result = gattCallback.asyncOperationCallbackFlow
+            .mapNotNull { it as? DescriptorWriteCallback }
+            .first()
+
+        val callbackCharacteristicUUID = result.descriptor.characteristic.uuid
+        if (characteristic != callbackCharacteristicUUID)
+            throw IllegalStateException(
+                "Received result for wrong characteristic. " +
+                        "(characteristic.uuid=${characteristic} " +
+                        "callbackCharacteristicUUID=${callbackCharacteristicUUID})"
+            )
+
+        if (descriptor != result.descriptor.uuid)
+            throw IllegalStateException(
+                "Received result for wrong descriptor. " +
+                        "(descriptor.uuid=${descriptor} " +
+                        "result.descriptor.uuid=${result.descriptor.uuid})"
+            )
+
+        if (result.status != GATT_STATUS_SUCCESS)
+            throw AsyncOperationFailedException(result.status)
+    }
+
+    fun writeGattDescriptor(
+        service: UUID,
+        characteristic: UUID,
+        descriptor: UUID,
+        data: ByteArray
+    ) {
+        with(getGattClientOrThrow()) {
+            writeDescriptor(service, characteristic, descriptor, data)
+        }
+    }
+
+    suspend fun startNotifyAsync(
+        service: UUID,
+        characteristic: UUID,
+        onCharacteristicChanged: OnNotificationReceived
+    ): NotificationSubscription.CancellationToken {
+        writeGattClientConfigurationDescriptorAsync(service, characteristic, true)
+        with(getGattClientOrThrow()) {
+            setCharacteristicNotification(service, characteristic, true)
+        }
+
+        return NotificationSubscription(this, onCharacteristicChanged)
+            .also { notificationSubscriptions.add(Pair(Pair(service, characteristic), it)) }
+            .cancellationToken
+    }
+
+    private fun stopNotify(notificationSubscription: NotificationSubscription) {
+        val elementToRemove = notificationSubscriptions.single { (_, value) ->
+            value == notificationSubscription
+        }
+        notificationSubscriptions.remove(elementToRemove)
+
+        val (key, _) = elementToRemove
+        val (serviceUUID, characteristicUUID) = key
+
+        if (stateManager.state !is Disconnected) {
+            with(getGattClientOrThrow()) {
+                try {
+                    writeClientConfigurationDescriptor(serviceUUID, characteristicUUID, false)
+                    setCharacteristicNotification(serviceUUID, characteristicUUID, false)
+                } catch (err: Throwable) {
+                    Log.e(
+                        TAG, "Failed to update characteristic " +
+                                "Client-Configuration-Descriptor with notification disabled."
+                    )
+                }
+            }
+        } else {
+            Log.v(
+                TAG, "stopNotify() - Clearing record for subscription (on " +
+                        "[serviceUUID=$serviceUUID, characteristicUUID=$characteristicUUID]) " +
+                        "without calling operations on GATT-Client, as GATT-client has " +
+                        "already been dropped (Disconnected-State)."
+            )
+        }
+    }
+
+    private fun cancelAllNotificationSubscriptions() {
+        notificationSubscriptions
+            .map { (_, value) -> value.cancellationToken }
+            .forEach { it.cancel() }
+    }
+
+    //region Setup
+    private fun setupStateManagerObserving() {
+        scope.launch {
+            stateManager.latestState.collect { state ->
+                when (state) {
+                    is Disconnected -> cancelAllNotificationSubscriptions()
+                    else -> {}  /* no-op */
+                }
+            }
+        }
+    }
+
+    private fun setupGattCallbackObserving() {
+        scope.launch {
+            launch {
+                gattCallback.connectionStateChangeCallbackFlow.collect { (newState, status) ->
+                    stateManager.handleEvent(Event.OnGattConnectionStateChange(newState, status))
+                }
+            }
+            launch {
+                gattCallback.asyncOperationCallbackFlow
+                    .mapNotNull { it as? ServicesDiscoveredCallback }
+                    .collect { (services) ->
+                        stateManager.handleEvent(Event.OnGattServicesDiscovered(services))
+                    }
+            }
+            launch {
+                gattCallback.asyncOperationCallbackFlow
+                    .mapNotNull { it as? CharacteristicChangedCallback }
+                    .collect { (bluetoothGattCharacteristic) ->
+                        val serviceUUID = bluetoothGattCharacteristic.service.uuid
+                        val characteristicUUID = bluetoothGattCharacteristic.uuid
+
+                        with(CharacteristicUpdate(newValue = bluetoothGattCharacteristic.value)) {
+                            notificationSubscriptions
+                                .filter { (key, _) ->
+                                    val (otherServiceUUID, otherCharacteristicUUID) = key
+
+                                    serviceUUID == otherServiceUUID &&
+                                            characteristicUUID == otherCharacteristicUUID
+                                }
+                                .forEach { (_, value) -> value.callback(this) }
+                        }
+                    }
+            }
+        }
+    }
+    //endregion
+
+    /**
+     * Returns the current state's gatt-client, or `null` if current-state
+     * does not feature a gatt-client or the gatt-client is currently not ready
+     * for accepting operations.
+     */
+    private fun getGattClientOrThrow(): BluetoothGatt {
+        val state = stateManager.state
+        return (state as? Connected)?.session?.gattClient
+            ?: throw OperationNotSupportedByCurrentStateException(state)
+    }
+
+    private fun triggerConnect(device: BluetoothDevice, retryCount: Int = 3) {
         stateManager.handleEvent(OnConnectionRequested(device, retryCount))
     }
 
-    fun disconnect() {
+    private fun triggerDisconnect() {
         stateManager.handleEvent(OnDisconnectRequested)
     }
 
-    private inner class StateManager {
-        val state: State
-            get() = stateMachine.state
+    //region Supporting Types
+    class NotificationSubscription internal constructor(
+        client: Client,
+        internal val callback: OnNotificationReceived
+    ) {
+        internal val cancellationToken = CancellationToken(client)
 
-        val latestState: StateFlow<State>
-        private val _latestState =
-            MutableStateFlow<State>(Disconnected(null))
-
-        private val scope = CoroutineScope(Dispatchers.Default)
-
-        init {
-            latestState = _latestState.asStateFlow()
-        }
-
-        private val stateMachine =
-            StateMachine.create<State, Event, SideEffect> {
-                initialState(Disconnected(null))
-                state<Disconnected> {
-                    on<OnConnectionRequested> {
-                        val session = connect(it.device)
-                        val timeoutTimer = startConnectionAttemptTimeoutTimer()
-                        transitionTo(Connecting(0, it.retryCount, timeoutTimer, session))
-                    }
-                }
-                state<Connecting> {
-                    onExit { cancelTimeoutTimer() }
-                    on<OnConnectionAttemptTimeout> {
-                        if (isAnyRetryRemaining()) {
-                            transitionTo(discardAndMakeNextConnectingState())
-                        } else {
-                            transitionTo(
-                                discardAndMakeDisconnectedState(
-                                    disconnectCause = NoConnectionAttemptsLeftException()
-                                )
-                            )
-                        }
-                    }
-                    on<OnGattConnectionStateChange> {
-                        val disconnectReason = it.getDisconnectReason()
-                        when {
-                            disconnectReason != null -> {
-                                when (disconnectReason) {
-                                    is DisconnectReason.Graceful -> {
-                                        transitionTo(
-                                            discardAndMakeDisconnectedState(disconnectCause = null)
-                                        )
-                                    }
-                                    is DisconnectReason.ConnectionError -> {
-                                        if (isAnyRetryRemaining()) {
-                                            transitionTo(discardAndMakeNextConnectingState())
-                                        } else {
-                                            transitionTo(
-                                                discardAndMakeDisconnectedState(
-                                                    disconnectCause = NoConnectionAttemptsLeftException()
-                                                )
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                            it.isConnectionEstablished() -> {
-                                val cachedServices =
-                                    gattServicesCache.getServices(session.device.address)
-                                when {
-                                    cachedServices != null -> {
-                                        transitionTo(Connected(cachedServices, session))
-                                    }
-                                    else -> {
-                                        try {
-                                            discoverServices()
-                                        } catch (err: Throwable) {
-                                            Log.e(
-                                                TAG,
-                                                "Failed to start service discovery. Will disconnect..." +
-                                                        "Error:",
-                                                err
-                                            )
-                                            return@on transitionTo(
-                                                discardAndMakeDisconnectedState(disconnectCause = err)
-                                            )
-                                        }
-                                        transitionTo(DiscoveringServices(session))
-                                    }
-                                }
-                            }
-                            else -> dontTransition()
-                        }
-                    }
-                    on<OnDisconnectRequested> {
-                        transitionTo(discardAndMakeDisconnectedState(disconnectCause = null))
-                    }
-                }
-                state<DiscoveringServices> {
-                    on<OnGattServicesDiscovered> {
-                        val (services) = it
-
-                        gattServicesCache.setServices(services, session.device.address)
-                        transitionTo(Connected(services, session))
-                    }
-                    on<OnDisconnectRequested> {
-                        transitionTo(discardAndMakeDisconnectedState(disconnectCause = null))
-                    }
-                    on<OnGattConnectionStateChange> {
-                        when (val disconnectReason = it.getDisconnectReason()) {
-                            null -> dontTransition()
-                            is DisconnectReason.Graceful -> {
-                                transitionTo(
-                                    discardAndMakeDisconnectedState(disconnectCause = null)
-                                )
-                            }
-                            is DisconnectReason.ConnectionError -> {
-                                transitionTo(
-                                    discardAndMakeDisconnectedState(disconnectCause = disconnectReason.error)
-                                )
-                            }
-                        }
-                    }
-                }
-                state<Connected> {
-                    on<OnDisconnectRequested> {
-                        transitionTo(discardAndMakeDisconnectedState(disconnectCause = null))
-                    }
-                    on<OnGattConnectionStateChange> {
-                        when (val disconnectReason = it.getDisconnectReason()) {
-                            null -> dontTransition()
-                            is DisconnectReason.Graceful -> {
-                                transitionTo(Disconnected(null)).also { closeConnection() }
-                            }
-                            is DisconnectReason.ConnectionError -> {
-                                transitionTo(Disconnected(disconnectReason.error)).also { closeConnection() }
-                            }
-                        }
-                    }
-                }
-                onTransition {
-                    val validTransition =
-                        it as? StateMachine.Transition.Valid ?: return@onTransition
-
-                    if (validTransition.sideEffect != null) {
-                        throw NotImplementedError() // No side-effects implemented yet
-                    }
-
-                    if (validTransition.fromState != validTransition.toState) {
-                        _latestState.value = state
-                        Log.d(TAG, "onTransition - state=$state")
-                    }
-                }
-            }
-
-        fun destroy() {
-            scope.cancel("Parent Client-instance will be destroyed.")
-        }
-
-        fun handleEvent(event: Event) {
-            // Log.v(TAG, "handleEvent: I'm working in thread ${Thread.currentThread().name}")
-            stateMachine.transition(event)  // StateMachine.transition() seems to be thread-safe
-        }
-
-        private fun connect(device: BluetoothDevice): Session {
-            try {
-                val gatt = device.connectGatt(
-                    context,
-                    false,
-                    ClientBluetoothGattCallback()
-                )
-                return Session(device, gatt)
-
-            } catch (err: SecurityException) {
-                throw MissingRequiredPermissionsException(err)
-            }
-        }
-
-        private fun Connecting.isAnyRetryRemaining() = retryCount + 1 < maxRetryCount
-
-        private fun Connecting.discardAndMakeNextConnectingState(): Connecting {
-            closeConnection()
-            val newTimeoutTimer = startConnectionAttemptTimeoutTimer()
-            val newSession = connect(session.device)
-
-            return Connecting(retryCount + 1, maxRetryCount, newTimeoutTimer, newSession)
-        }
-
-        private fun InitiatedState.discardAndMakeDisconnectedState(
-            disconnectCause: Throwable?
-        ): Disconnected {
-            closeConnection()
-            return Disconnected(disconnectCause)
-        }
-
-        /**
-         * Calls `BluetoothGatt.discoverServices()` and handles exceptions that may be
-         * thrown when starting to discover services.
-         *
-         * NOTE: This is an asynchronous operation. Once service discovery is completed,
-         * the BluetoothGattCallback.onServicesDiscovered callback is triggered.
-         *
-         */
-        private fun InitiatedState.discoverServices() {
-            try {
-                if (!session.bluetoothGatt.discoverServices())
-                    throw IllegalStateException(
-                        "BluetoothGatt-Client failed to start to discover services."
-                    )
-
-            } catch (err: SecurityException) {
-                throw MissingRequiredPermissionsException(err)
-            }
-        }
-
-        private fun InitiatedState.closeConnection() {
-            try {
-                session.bluetoothGatt.close()
-            } catch (err: SecurityException) {
-                /* no-op */
-            }
-        }
-
-        private fun Connecting.cancelTimeoutTimer() {
-            timeoutTimer.cancel()
-        }
-
-        /**
-         * Parses and returns Disconnect-Reason if gatt-connection is terminated
-         * ([BluetoothProfile.STATE_DISCONNECTED]) or null when the gatt-connection is active (either:
-         * [BluetoothProfile.STATE_CONNECTING], [BluetoothProfile.STATE_CONNECTED] or
-         * [BluetoothProfile.STATE_DISCONNECTED]).
-         *
-         * @return Disconnect-Reason if gatt-connection is terminated or null when the
-         * gatt-connection is active.
-         */
-        private fun OnGattConnectionStateChange.getDisconnectReason(): DisconnectReason? =
-            when (newState) {
-                BluetoothProfile.STATE_DISCONNECTED -> {
-                    when (status) {
-                        GATT_STATUS_SUCCESS -> DisconnectReason.Graceful
-                        GATT_STATUS_CONNECTION_TIMEOUT -> {
-                            DisconnectReason.ConnectionError(ConnectionTimeoutException())
-                        }
-                        else -> {
-                            val statusCodeString = "0x%02x".format(status)
-                            val disconnectCause = Exception(
-                                "GATT connection terminated with unknown status-code " +
-                                        "($statusCodeString)."
-                            )
-                            DisconnectReason.ConnectionError(disconnectCause)
-                        }
-                    }
-                }
-                else -> null
-            }
-
-        private fun OnGattConnectionStateChange.isConnectionEstablished(): Boolean =
-            newState >= BluetoothProfile.STATE_CONNECTED
-
-        private fun startConnectionAttemptTimeoutTimer(): Job =
-            setTimer(CONNECTION_ATTEMPT_TIMEOUT_IN_MILLIS) {
-                handleEvent(OnConnectionAttemptTimeout)
-            }
-
-        private fun setTimer(timeMillis: Long, onTimeout: VoidCallback): Job = scope.launch {
-            try {
-                withTimeout(timeMillis) {
-                    delay(Long.MAX_VALUE)   // wait for a long time...
-                }
-            } catch (err: CancellationException) {
-                onTimeout()
-            }
-        }
-
-        private inner class ClientBluetoothGattCallback : BluetoothGattCallback() {
-            @Suppress("NAME_SHADOWING")
-            override fun onConnectionStateChange(
-                gatt: BluetoothGatt?,
-                status: Int,
-                newState: Int
-            ) {
-                val loggingHandler: (tag: String?, msg: String) -> Int =
-                    if (status == GATT_STATUS_SUCCESS) Log::d else Log::w
-                loggingHandler(
-                    TAG, "onConnectionStateChange() - " +
-                            "gatt=$gatt status=$status newState=$newState"
-                )
-
-                handleEvent(OnGattConnectionStateChange(newState, status))
-            }
-
-            @Suppress("NAME_SHADOWING")
-            override fun onServicesDiscovered(gatt: BluetoothGatt?, status: Int) {
-                val gatt = gatt ?: throw IllegalArgumentException("`gatt` must not be null.")
-
-                val loggingHandler: (tag: String?, msg: String) -> Int =
-                    if (status == GATT_STATUS_SUCCESS) Log::d else Log::w
-                loggingHandler(TAG, "onServicesDiscovered - status=$status")
-
-                if (status != GATT_STATUS_SUCCESS) {
-                    val statusCodeString = "0x%02x".format(status)
-                    Log.w(TAG, "Failed to retrieve services - statusCode=$statusCodeString")
-                    return
-                }
-
-                handleEvent(OnGattServicesDiscovered(gatt.services))
+        inner class CancellationToken internal constructor(private val client: Client) {
+            fun cancel() {
+                client.stopNotify(this@NotificationSubscription)
             }
         }
     }
+
+    data class CharacteristicUpdate(val newValue: ByteArray)
+    //endregion
 }
 
-private sealed class DisconnectReason {
-    object Graceful : DisconnectReason()
-    data class ConnectionError(val error: Throwable) : DisconnectReason()
+//region Helpers
+private suspend fun Client.writeGattClientConfigurationDescriptorAsync(
+    service: UUID,
+    characteristic: UUID,
+    enableNotification: Boolean
+) {
+    // s. https://bignerdranch.com/blog/bluetooth-low-energy-on-android-part-3/
+    writeGattDescriptorAsync(
+        service,
+        characteristic,
+        CLIENT_CONFIGURATION_DESCRIPTOR_UUID,
+        getGattDescriptorNotificationValue(enableNotification)
+    )
 }
+
+private fun Client.writeClientConfigurationDescriptor(
+    service: UUID,
+    characteristic: UUID,
+    enableNotification: Boolean
+) {
+    // s. https://bignerdranch.com/blog/bluetooth-low-energy-on-android-part-3/
+    writeGattDescriptor(
+        service,
+        characteristic,
+        CLIENT_CONFIGURATION_DESCRIPTOR_UUID,
+        getGattDescriptorNotificationValue(enableNotification)
+    )
+}
+
+private fun getGattDescriptorNotificationValue(enable: Boolean) = if (enable) {
+    BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+} else {
+    BluetoothGattDescriptor.DISABLE_NOTIFICATION_VALUE
+}
+//endregion
+
+internal typealias OnNotificationReceived = (Client.CharacteristicUpdate) -> Unit

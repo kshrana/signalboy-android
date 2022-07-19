@@ -14,8 +14,6 @@ internal sealed class State {
         override val session: Session
     ) : State(), InitiatedState
 
-    data class DiscoveringServices(override val session: Session) : State(), InitiatedState
-
     data class Connected(
         val services: List<BluetoothGattService>,
         override val session: Session
@@ -35,7 +33,7 @@ internal sealed class Event {
 
     object OnDisconnectRequested : Event()
 
-    data class OnGattServicesDiscovered(val services: List<BluetoothGattService>) : Event()
+    data class OnGattServicesDiscovered(val services: Result<List<BluetoothGattService>>) : Event()
 }
 
 internal sealed class SideEffect

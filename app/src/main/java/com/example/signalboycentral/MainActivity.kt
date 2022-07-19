@@ -7,21 +7,18 @@ import android.os.Bundle
 import android.util.Log
 import android.view.Menu
 import android.view.MenuItem
+import android.widget.Button
 import androidx.annotation.DrawableRes
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
-import androidx.navigation.findNavController
-import androidx.navigation.ui.AppBarConfiguration
-import androidx.navigation.ui.navigateUp
-import androidx.navigation.ui.setupActionBarWithNavController
 import com.example.signalboycentral.databinding.ActivityMainBinding
 import com.google.android.material.snackbar.Snackbar
 import de.kishorrana.signalboy.AlreadyConnectingException
 import de.kishorrana.signalboy.BluetoothDisabledException
 import de.kishorrana.signalboy.NoCompatiblePeripheralDiscovered
-import de.kishorrana.signalboy.SignalboyService
+import de.kishorrana.signalboy.Signalboy
 import de.kishorrana.signalboy.SignalboyService.ConnectionState
 import de.kishorrana.signalboy.client.ConnectionTimeoutException
 import de.kishorrana.signalboy.client.NoConnectionAttemptsLeftException
@@ -35,20 +32,15 @@ const val PERMISSION_REQUEST_LOCATION = 1
 
 class MainActivity : AppCompatActivity(), ActivityCompat.OnRequestPermissionsResultCallback {
 
-    private lateinit var appBarConfiguration: AppBarConfiguration
     private lateinit var binding: ActivityMainBinding
 
-    private val onConnectionStateUpdateListener = SignalboyService.OnConnectionStateUpdateListener {
+    private val onConnectionStateUpdateListener = Signalboy.OnConnectionStateUpdateListener {
         // Check for errors...
-        (signalboyService.connectionState as? ConnectionState.Disconnected)?.cause?.let { err ->
+        (it as? ConnectionState.Disconnected)?.cause?.let { err ->
             onConnectionError(err)
         }
 
         updateView()
-    }
-
-    private val signalboyService: SignalboyService by lazy {
-        SignalboyService(this, SignalboyService.getDefaultAdapter())
     }
 
     private val pendingPermissionRequests = mutableListOf<Int>()
@@ -61,23 +53,22 @@ class MainActivity : AppCompatActivity(), ActivityCompat.OnRequestPermissionsRes
 
         setSupportActionBar(binding.toolbar)
 
-        val navController = findNavController(R.id.nav_host_fragment_content_main)
-        appBarConfiguration = AppBarConfiguration(navController.graph)
-        setupActionBarWithNavController(navController, appBarConfiguration)
-
         binding.fab.setOnClickListener { onFabClicked() }
+        binding.root.findViewById<Button>(R.id.button_sync).setOnClickListener {
+            Signalboy.tryTriggerSync()
+        }
 
         updateView()
     }
 
     override fun onStart() {
         super.onStart()
-        signalboyService.setOnConnectionStateUpdateListener(onConnectionStateUpdateListener)
+        Signalboy.setOnConnectionStateUpdateListener(onConnectionStateUpdateListener)
     }
 
     override fun onStop() {
         super.onStop()
-        signalboyService.unsetOnConnectionStateUpdateListener()
+        Signalboy.unsetOnConnectionStateUpdateListener()
     }
 
     override fun onCreateOptionsMenu(menu: Menu): Boolean {
@@ -94,12 +85,6 @@ class MainActivity : AppCompatActivity(), ActivityCompat.OnRequestPermissionsRes
             R.id.action_settings -> true
             else -> super.onOptionsItemSelected(item)
         }
-    }
-
-    override fun onSupportNavigateUp(): Boolean {
-        val navController = findNavController(R.id.nav_host_fragment_content_main)
-        return navController.navigateUp(appBarConfiguration)
-                || super.onSupportNavigateUp()
     }
 
     override fun onRequestPermissionsResult(
@@ -226,8 +211,8 @@ class MainActivity : AppCompatActivity(), ActivityCompat.OnRequestPermissionsRes
             binding.fab.setImageDrawable(ContextCompat.getDrawable(this, resourceId))
         }
 
-        when (signalboyService.connectionState) {
-            is ConnectionState.Disconnected ->
+        when (Signalboy.tryGetConnectionState()) {
+            null, is ConnectionState.Disconnected ->
                 setFabIconImage(R.drawable.baseline_bluetooth_black_24dp)
             is ConnectionState.Connecting ->
                 setFabIconImage(R.drawable.baseline_bluetooth_searching_black_24dp)
@@ -237,10 +222,9 @@ class MainActivity : AppCompatActivity(), ActivityCompat.OnRequestPermissionsRes
     }
 
     private fun onFabClicked() {
-        when (signalboyService.connectionState) {
-            is ConnectionState.Disconnected -> connectToSignalboy()
-            is ConnectionState.Connecting -> disconnectFromSignalboy()
-            is ConnectionState.Connected -> disconnectFromSignalboy()
+        when (Signalboy.tryGetConnectionState()) {
+            null, is ConnectionState.Disconnected -> startSignalboy()
+            is ConnectionState.Connecting, is ConnectionState.Connected -> stopSignalboy()
         }
     }
 
@@ -340,17 +324,18 @@ class MainActivity : AppCompatActivity(), ActivityCompat.OnRequestPermissionsRes
     }
 
     private fun onPermissionsEnsured() {
+        val bluetoothAdapter = Signalboy.getDefaultAdapter(this)
         try {
-            signalboyService.verifyPrerequisites()
+            Signalboy.verifyPrerequisites(this, bluetoothAdapter)
         } catch (err: Throwable) {
             Log.e(TAG, "Prerequisites are not met. Error: $err")
             return
         }
 
-        signalboyService.tryConnectToPeripheral()
+        Signalboy.start(this, bluetoothAdapter)
     }
 
-    private fun connectToSignalboy() {
+    private fun startSignalboy() {
         pendingPermissionRequests.clear()
         pendingPermissionRequests.addAll(checkForPendingPermissions())
 
@@ -359,7 +344,7 @@ class MainActivity : AppCompatActivity(), ActivityCompat.OnRequestPermissionsRes
         requestNextPermission()
     }
 
-    private fun disconnectFromSignalboy() {
-        signalboyService.tryDisconnectFromPeripheral()
+    private fun stopSignalboy() {
+        Signalboy.stop()
     }
 }

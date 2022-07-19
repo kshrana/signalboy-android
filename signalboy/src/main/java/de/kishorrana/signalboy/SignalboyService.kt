@@ -1,48 +1,30 @@
 package de.kishorrana.signalboy
 
-import android.Manifest
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
-import android.bluetooth.BluetoothManager
 import android.content.Context
-import android.content.pm.PackageManager
-import android.os.Build
 import android.util.Log
-import androidx.core.content.ContextCompat
 import de.kishorrana.signalboy.client.Client
-import de.kishorrana.signalboy.client.NoConnectionAttemptsLeftException
 import de.kishorrana.signalboy.client.State
+import de.kishorrana.signalboy.client.util.hasAllSignalboyGattAttributes
+import de.kishorrana.signalboy.gatt.SignalboyGattAttributes
 import de.kishorrana.signalboy.scanner.Scanner
+import de.kishorrana.signalboy.sync.SyncService
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
+import kotlin.coroutines.CoroutineContext
 
 private const val TAG = "SignalboyService"
 
-class SignalboyService(
+class SignalboyService internal constructor(
     // Reimplementing `SignalboyService` as an Android Bound Service would
     // make capturing the Context unnecessary.
     //
     // s. Android SDK documentation for a reference implementation:
     // https://developer.android.com/guide/topics/connectivity/bluetooth/connect-gatt-server#setup-bound-service
     private val context: Context,
-    private val bluetoothAdapter: BluetoothAdapter = getDefaultAdapter(context)
+    private val bluetoothAdapter: BluetoothAdapter
 ) {
-    companion object {
-        @JvmStatic
-        fun getDefaultAdapter(context: Context): BluetoothAdapter =
-            with(context.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager) {
-                adapter ?: throw Exception(
-                    "Unable to obtain a BluetoothAdapter. " +
-                            "Tip: BLE can be required per the <uses-feature> tag " +
-                            "in the AndroidManifest.xml"
-                )
-            }
-    }
-
-    fun interface OnConnectionStateUpdateListener {
-        fun stateUpdated(state: ConnectionState)
-    }
-
     val connectionState: ConnectionState
         get() = latestConnectionState.value
 
@@ -51,88 +33,67 @@ class SignalboyService(
     // e.g. when implemented as a Bound Service.
     //
     // [1]: https://developer.android.com/topic/libraries/architecture/coroutines#lifecyclescope
-    private val scope = MainScope()
-    private val client by lazy { Client(context) }
+    private val scope: CoroutineScope
 
-    private val latestConnectionState =
+    init {
+        val exceptionHandler = CoroutineExceptionHandler { context, err ->
+            Log.e(TAG, "Catching uncaught exception - context=$context error:", err)
+        }
+        scope = CoroutineScope(
+            Dispatchers.Default +
+                    SupervisorJob() +
+                    exceptionHandler +
+                    CoroutineName("SignalboyService")
+        )
+    }
+
+    private val client by lazy { Client(context) }
+    private val syncService by lazy { SyncService() }
+
+    private val _latestConnectionState =
         MutableStateFlow<ConnectionState>(ConnectionState.Disconnected())
-            // Notify `OnConnectionStateUpdateListener` on any updates to `latestConnectionState`.
-            .also { latestConnectionState ->
-                scope.launch {
-                    latestConnectionState.collect { newValue ->
-                        onConnectionStateUpdateListener?.stateUpdated(newValue)
-                    }
-                }
-            }
-    private var connecting: Job? = null
+    val latestConnectionState = _latestConnectionState.asStateFlow()
+
+    // Will be `true`, if establishing a connection has succeeded.
+    private var connecting: Deferred<Boolean>? = null
     private var clientStateObserving: Job? = null
 
-    private var onConnectionStateUpdateListener: OnConnectionStateUpdateListener? = null
+    private var syncServiceCoroutineContext: CoroutineContext? = null
+    private var syncServiceRestarting: Job? = null
 
     fun destroy() {
         client.destroy()
         scope.cancel("Parent SignalboyService-instance will be destroyed.")
     }
 
-    fun setOnConnectionStateUpdateListener(listener: OnConnectionStateUpdateListener) {
-        onConnectionStateUpdateListener = listener
+    fun tryConnectToPeripheral() {
+        scope.launch {
+            tryOrPublishFailedConnectionState { connectToPeripheralAsync() }
+        }
     }
 
-    fun unsetOnConnectionStateUpdateListener() {
-        onConnectionStateUpdateListener = null
-    }
-
-    fun verifyPrerequisites() {
-        val requiredPermissions = mutableListOf<String>()
-        if (Build.VERSION.SDK_INT >= 31) {
-            requiredPermissions.addAll(
-                listOf(
-                    Manifest.permission.BLUETOOTH_SCAN,
-                    Manifest.permission.BLUETOOTH_CONNECT
-                )
-            )
-        } else {
-            requiredPermissions.add(Manifest.permission.ACCESS_FINE_LOCATION)
+    fun tryDisconnectFromPeripheral() {
+        scope.launch {
+            tryOrPublishFailedConnectionState { disconnectFromPeripheralAsync(null) }
         }
-
-        for (permission in requiredPermissions) {
-            if (ContextCompat.checkSelfPermission(
-                    context,
-                    permission
-                ) != PackageManager.PERMISSION_GRANTED
-            ) {
-                Log.e(TAG, "Missing required permission: $permission")
-                throw MissingRequiredPermissionsException(permission)
-            }
-        }
-
-        if (!bluetoothAdapter.isEnabled) throw BluetoothDisabledException()
-
-        Log.d(TAG, "Successfully verified all prerequisites.")
     }
 
     /**
-     * Make sure to set an Update-Listener beforehand (via [setOnConnectionStateUpdateListener]).
+     * Triggers sync manually (process will be performed asynchronously without blocking).
+     * NOTE: **Must _not_ be called from outside of module.** Method is only public for
+     * DEBUG-purposes.
+     *
+     * @return Returns `true` if starting the async operation was successful.
      *
      */
-    fun tryConnectToPeripheral() = scope.launch {
-        tryOrPublishFailedConnectionState { connectToPeripheralAsync() }
-    }
-
-    fun tryDisconnectFromPeripheral() = scope.launch {
-        tryOrPublishFailedConnectionState { disconnectFromPeripheralAsync() }
-    }
-
-    /**
-     * Make sure to set an Update-Listener beforehand (via [setOnConnectionStateUpdateListener]).
-     *
-     */
-    fun connectToPeripheral() = scope.launch {
-        tryOrPublishFailedConnectionState(true) { connectToPeripheralAsync() }
-    }
-
-    fun disconnectFromPeripheral() = scope.launch {
-        tryOrPublishFailedConnectionState(true) { disconnectFromPeripheralAsync() }
+    fun tryTriggerSync(): Boolean {
+        try {
+            syncService.triggerSync()
+        } catch (err: Throwable) {
+            Log.e(TAG, "tryTriggerSync() - Failed to trigger sync due to error:", err)
+            return false
+        }
+        return true
     }
 
     private suspend fun connectToPeripheralAsync() = coroutineScope {
@@ -141,14 +102,14 @@ class SignalboyService(
             throw AlreadyConnectingException()
         }
 
-        connecting = launch {
-            latestConnectionState.value = ConnectionState.Connecting
+        val connecting = async {
+            _latestConnectionState.value = ConnectionState.Connecting
 
             // Try to discover Peripheral.
             val device: BluetoothDevice
             try {
                 val devices = Scanner(bluetoothAdapter).discoverPeripherals(
-                    OutputService_UUID,
+                    SignalboyGattAttributes.OUTPUT_SERVICE_UUID,
                     SCAN_PERIOD_IN_MILLIS,
                     true
                 )
@@ -165,88 +126,155 @@ class SignalboyService(
             // Try connecting to Peripheral.
             // But first setup observer for Client's connection-state and forward any events to
             // `self`'s `latestConnectionState`-Publisher.
+            clientStateObserving?.cancelAndJoin()
             clientStateObserving = scope.launch {
-                client.latestState
-                    .onCompletion { err ->
-                        // Observer is expected to complete when `clientStateObserving`-
-                        // Job is cancelled.
-                        Log.v(
-                            TAG, "clientStateObserving: Completion due to error:", err
-                        )
-                    }
-                    // Drop initial "Disconnected"-events as StateFlow emits
-                    // initial value on subscribing.
-                    .dropWhile { it is State.Disconnected }
-                    .map(::convertFromClientState)
-                    .collect { latestConnectionState.value = it }
+                try {
+                    client.latestState
+                        .onCompletion { err ->
+                            // Observer is expected to complete when `clientStateObserving`-
+                            // Job is cancelled.
+                            Log.v(
+                                TAG, "clientStateObserving: Completion due to error:", err
+                            )
+                        }
+                        // Drop initial "Disconnected"-events as StateFlow emits
+                        // initial value on subscribing.
+                        .dropWhile { it is State.Disconnected }
+                        .onEach { (it as? State.Connected)?.let(::ensureHasSignalboyGattAttributes) }
+                        .map(::convertFromClientState)
+                        .collect { _latestConnectionState.value = it }
+                } catch (err: GattClientIsMissingAttributesException) {
+                    Log.d(TAG, "clientStateObserving: caught error:", err)
+                    disconnectFromPeripheralAsync(err)
+                    // TODO: Or should rather start another attempt to connect automatically?
+                }
             }
 
-            val isSuccess: Boolean
             try {
-                isSuccess = client.connectAsync(device)
+                client.connectAsync(device).also {
+                    (client.state as? State.Connected)?.let(::ensureHasSignalboyGattAttributes)
+                }
             } catch (err: Throwable) {
-                // Cancel client connection-state observing.
-                clientStateObserving?.cancelAndJoin()
+                disconnectFromPeripheralAsync(err)
                 throw err
             }
+                .also {
+                    if (it)
+                        Log.i(TAG, "Successfully connected to peripheral.")
+                    else
+                        Log.i(TAG, "Failed to connect to peripheral.")
+                }
+        }
+            .also { connecting = it }
 
-            if (isSuccess)
-                Log.i(TAG, "Successfully connected to peripheral.")
-            else
-                Log.i(TAG, "Failed to connect to peripheral.")
+        if (!connecting.await())    // Failed to establish connection.
+            return@coroutineScope
+
+        startSyncService()
+    }
+
+    private suspend fun disconnectFromPeripheralAsync(disconnectCause: Throwable?) {
+        try {
+            stopSyncService()
+            clientStateObserving?.cancelAndJoin()
+        } catch (err: Throwable) {
+            Log.e(
+                TAG,
+                "disconnectFromPeripheralAsync() - Encountered error during " +
+                        "disconnect-attempt. Will still disconnect from peripheral and rethrow " +
+                        "unhandled exception. Error:",
+                err
+            )
+            throw err
+        } finally {
+            withContext(NonCancellable) {
+                client.disconnectAsync()
+                // Publish
+                _latestConnectionState.value = ConnectionState.Disconnected(disconnectCause)
+            }
         }
     }
 
-    private suspend fun disconnectFromPeripheralAsync() {
-        client.disconnectAsync().also {
-            // Give clientStateObserving-Job time to process that the peripheral was
-            // disconnected.
-            yield()
-        }
-        clientStateObserving?.cancelAndJoin()
+    /**
+     * Examines the GATT-client's services and characteristics and throws if expected
+     * features are missing.
+     *
+     */
+    private fun ensureHasSignalboyGattAttributes(connectedState: State.Connected) {
+        if (!connectedState.services.hasAllSignalboyGattAttributes())
+            throw GattClientIsMissingAttributesException()
     }
 
-    // Helper functions
-
-    private fun convertFromClientState(state: State): ConnectionState = when (state) {
-        is State.Disconnected -> ConnectionState.Disconnected(state.cause)
-        is State.Connecting -> ConnectionState.Connecting
-        is State.DiscoveringServices -> ConnectionState.Connecting
-        is State.Connected -> ConnectionState.Connected
-    }
-
-    private fun publishFailedConnectionState(err: Throwable) {
-        latestConnectionState.value = ConnectionState.Disconnected(err)
-    }
-
-    private fun publishFailedConnectionStateAndRethrow(err: Throwable): Nothing {
-        publishFailedConnectionState(err)
-        throw err
+    //region Helper
+    private fun publishConnectionFailure(err: Throwable) {
+        _latestConnectionState.value = ConnectionState.Disconnected(err)
     }
 
     private suspend fun <R> tryOrPublishFailedConnectionState(
-        shouldRethrow: Boolean = false,
         block: suspend () -> R
     ) {
-        val errorHandler: (err: Throwable) -> Any =
-            if (shouldRethrow) ::publishFailedConnectionStateAndRethrow else ::publishFailedConnectionState
-
         try {
             block()
-        } catch (err: MissingRequiredPermissionsException) {
-            errorHandler(err)
-        } catch (err: NoCompatiblePeripheralDiscovered) {
-            errorHandler(err)
-        } catch (err: NoConnectionAttemptsLeftException) {
-            errorHandler(err)
         } catch (err: Throwable) {
-            Log.d(
-                TAG, "tryOrPublishFailedConnectionState: Will rethrow unknown exception " +
-                        "without further handling. Error:", err
-            )
-            throw err
+            publishConnectionFailure(err)
         }
     }
+
+    private fun CoroutineScope.launchSyncService(client: Client, attempt: Int = 1) {
+        Log.i(TAG, "Launching SyncService (attempt=$attempt).")
+        if (syncServiceCoroutineContext?.isActive == true) {
+            throw IllegalStateException("Sync Service is already running.")
+        }
+
+        val childJob = Job(coroutineContext.job) + CoroutineName("SyncService")
+        val exceptionHandler = CoroutineExceptionHandler { _, err ->
+            Log.e(TAG, "SyncService (job=$childJob) failed with error:", err)
+            // Stop service before next startup attempt.
+            stopSyncService()
+            childJob.cancel()
+
+            syncServiceRestarting?.cancel()
+            syncServiceRestarting = launch {
+                // Backoff strategy
+                val delayMillis: Long = when (attempt) {
+                    1 -> 5 * 1_000
+                    2 -> 30 * 1_000
+                    else -> 3 * MILLISECONDS_IN_MIN
+                }
+                Log.i(
+                    TAG, "Next attempt to start SyncService in ${delayMillis / 1_000}s " +
+                            "(backoff-strategy)..."
+                )
+                delay(delayMillis)
+
+                // Retry
+                scope.launchSyncService(client, attempt = attempt + 1)
+            }
+        }
+
+        val context = coroutineContext + childJob + exceptionHandler
+        syncServiceCoroutineContext = context
+        syncService.attach(context, client)
+    }
+
+    private fun startSyncService() {
+        scope.launchSyncService(client)
+    }
+
+    private fun stopSyncService() {
+        syncService.detach()
+        syncServiceCoroutineContext?.cancel()
+        syncServiceRestarting?.cancel()
+    }
+    //endregion
+
+    //region Factory
+    private fun convertFromClientState(state: State): ConnectionState = when (state) {
+        is State.Disconnected -> ConnectionState.Disconnected(state.cause)
+        is State.Connecting -> ConnectionState.Connecting
+        is State.Connected -> ConnectionState.Connected
+    }
+    //endregion
 
     sealed interface ConnectionState {
         data class Disconnected(val cause: Throwable? = null) : ConnectionState
