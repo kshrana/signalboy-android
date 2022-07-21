@@ -9,7 +9,7 @@ import android.os.Build
 import android.util.Log
 import androidx.core.content.ContextCompat
 import de.kishorrana.signalboy.signalboyservice.SignalboyService
-import de.kishorrana.signalboy.signalboyservice.SignalboyService.ConnectionState
+import de.kishorrana.signalboy.signalboyservice.SignalboyService.State
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.dropWhile
 
@@ -94,12 +94,12 @@ class Signalboy {
                 .apply {
                     serviceStateObserving?.cancel()
                     serviceStateObserving = scope.launch {
-                        latestConnectionState
+                        latestState
                             // Discard until first connection-attempt has been made.
-                            .dropWhile { it is ConnectionState.Disconnected }
+                            .dropWhile { it is State.Disconnected }
                             .collect { newValue ->
                                 withContext(Dispatchers.Main) {
-                                    Log.v(TAG, "connectionState=$connectionState")
+                                    Log.v(TAG, "state=$state")
                                     onConnectionStateUpdateListener?.stateUpdated(newValue)
                                 }
                             }
@@ -142,7 +142,7 @@ class Signalboy {
          * @return Returns `null` when stopped, or Signalboy Service when started.
          */
         @JvmStatic
-        fun tryGetConnectionState(): ConnectionState? = service?.connectionState
+        fun tryGetConnectionState(): State? = service?.state
 
         @JvmStatic
         fun tryTriggerSync(): Boolean = service?.tryTriggerSync() ?: false
@@ -198,9 +198,9 @@ class Signalboy {
                     }
                 }
 
-                suspend fun reconnectIfNeeded(state: ConnectionState) {
+                suspend fun reconnectIfNeeded(state: State) {
                     // Reconnect if connection was dropped due to an error.
-                    val disconnectCause = (state as? ConnectionState.Disconnected)?.cause
+                    val disconnectCause = (state as? State.Disconnected)?.cause
                     if (disconnectCause != null) {
                         Log.w(TAG, "Connection lost due to error:", disconnectCause)
                         connect(1)
@@ -208,7 +208,7 @@ class Signalboy {
                 }
 
                 connect()
-                service.latestConnectionState
+                service.latestState
                     .collect { state -> reconnectIfNeeded(state) }
             }
         //endregion
@@ -220,6 +220,6 @@ class Signalboy {
     }
 
     fun interface OnConnectionStateUpdateListener {
-        fun stateUpdated(state: ConnectionState)
+        fun stateUpdated(state: State)
     }
 }

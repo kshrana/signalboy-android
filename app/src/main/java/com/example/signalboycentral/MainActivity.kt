@@ -23,7 +23,7 @@ import de.kishorrana.signalboy.client.ConnectionTimeoutException
 import de.kishorrana.signalboy.client.NoConnectionAttemptsLeftException
 import de.kishorrana.signalboy.scanner.AlreadyScanningException
 import de.kishorrana.signalboy.scanner.BluetoothLeScanFailed
-import de.kishorrana.signalboy.signalboyservice.SignalboyService.ConnectionState
+import de.kishorrana.signalboy.signalboyservice.SignalboyService.State
 
 private const val TAG = "MainActivity"
 
@@ -34,9 +34,9 @@ class MainActivity : AppCompatActivity(), ActivityCompat.OnRequestPermissionsRes
 
     private lateinit var binding: ActivityMainBinding
 
-    private val onConnectionStateUpdateListener = Signalboy.OnConnectionStateUpdateListener {
+    private val onStateUpdateListener = Signalboy.OnConnectionStateUpdateListener {
         // Check for errors...
-        (it as? ConnectionState.Disconnected)?.cause?.let { err ->
+        (it as? State.Disconnected)?.cause?.let { err ->
             onConnectionError(err)
         }
 
@@ -66,7 +66,7 @@ class MainActivity : AppCompatActivity(), ActivityCompat.OnRequestPermissionsRes
 
     override fun onStart() {
         super.onStart()
-        Signalboy.setOnConnectionStateUpdateListener(onConnectionStateUpdateListener)
+        Signalboy.setOnConnectionStateUpdateListener(onStateUpdateListener)
     }
 
     override fun onStop() {
@@ -221,21 +221,21 @@ class MainActivity : AppCompatActivity(), ActivityCompat.OnRequestPermissionsRes
         }
 
         when (val connectionState = Signalboy.tryGetConnectionState()) {
-            is ConnectionState.Disconnected -> {
+            is State.Disconnected -> {
                 binding.contentMain.textPrimary.text = "Disconnected"
                 binding.contentMain.textSecondary.text = "Cause: ${connectionState.cause}"
                 setImageViewDrawable(R.drawable.baseline_bluetooth_black_24dp)
             }
 
-            is ConnectionState.Connecting -> {
+            is State.Connecting -> {
                 binding.contentMain.textPrimary.text = "Connecting"
                 binding.contentMain.textSecondary.text = ""
                 setImageViewDrawable(R.drawable.baseline_bluetooth_searching_black_24dp)
             }
 
-            is ConnectionState.Connected -> {
+            is State.Connected -> {
                 binding.contentMain.textPrimary.text = "Connected"
-                binding.contentMain.textSecondary.text = ""
+                binding.contentMain.textSecondary.text = "isSynced=${connectionState.isSynced}"
                 setImageViewDrawable(R.drawable.baseline_bluetooth_connected_black_24dp)
             }
 

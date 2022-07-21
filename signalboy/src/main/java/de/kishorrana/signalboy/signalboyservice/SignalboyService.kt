@@ -5,10 +5,11 @@ import android.content.Context
 import android.util.Log
 import de.kishorrana.signalboy.*
 import de.kishorrana.signalboy.client.Client
-import de.kishorrana.signalboy.client.State
+import de.kishorrana.signalboy.client.State as ClientState
 import de.kishorrana.signalboy.client.util.hasAllSignalboyGattAttributes
 import de.kishorrana.signalboy.gatt.SignalboyGattAttributes
 import de.kishorrana.signalboy.scanner.Scanner
+import de.kishorrana.signalboy.sync.State as SyncState
 import de.kishorrana.signalboy.sync.SyncService
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
@@ -25,8 +26,8 @@ class SignalboyService internal constructor(
     private val context: Context,
     private val bluetoothAdapter: BluetoothAdapter
 ) {
-    val connectionState: ConnectionState
-        get() = latestConnectionState.value
+    val state: State
+        get() = latestState.value
 
     // Could be replaced by making use of `LifecycleScope` (s. [1])
     // when class would subclass an Android Lifecycle Class,
@@ -50,9 +51,9 @@ class SignalboyService internal constructor(
     private val client by lazy { Client(context, parentJob = scope.coroutineContext.job) }
     private val syncService by lazy { SyncService() }
 
-    private val _latestConnectionState =
-        MutableStateFlow<ConnectionState>(ConnectionState.Disconnected())
-    val latestConnectionState = _latestConnectionState.asStateFlow()
+    private val _latestState =
+        MutableStateFlow<State>(State.Disconnected())
+    val latestState = _latestState.asStateFlow()
 
     // Will be `true`, if establishing a connection has succeeded.
     private var connecting: Job? = null
@@ -105,7 +106,7 @@ class SignalboyService internal constructor(
 
         connecting = launch {
             try {
-                _latestConnectionState.value = ConnectionState.Connecting
+                _latestState.value = State.Connecting
 
                 // Try to discover Peripheral.
                 val devices = Scanner(bluetoothAdapter).discoverPeripherals(
@@ -121,7 +122,7 @@ class SignalboyService internal constructor(
 
                 // Try connecting to Peripheral.
                 // But first setup observer for Client's connection-state and forward any events to
-                // `self`'s `latestConnectionState`-Publisher.
+                // `self`'s `latestState`-Publisher.
                 clientStateObserving?.cancelAndJoin()
                 clientStateObserving = scope.launch {
                     try {
@@ -135,10 +136,10 @@ class SignalboyService internal constructor(
                             }
                             // Drop initial "Disconnected"-events as StateFlow emits
                             // initial value on subscribing.
-                            .dropWhile { it is State.Disconnected }
-                            .onEach { (it as? State.Connected)?.let(::ensureHasSignalboyGattAttributes) }
-                            .map(::convertFromClientState)
-                            .collect { _latestConnectionState.value = it }
+                            .dropWhile { it is ClientState.Disconnected }
+                            .onEach { (it as? ClientState.Connected)?.let(::ensureHasSignalboyGattAttributes) }
+                            .combine(syncService.latestState, ::makeState)
+                            .collect { _latestState.value = it }
                     } catch (err: GattClientIsMissingAttributesException) {
                         Log.d(TAG, "clientStateObserving: caught error:", err)
                         disconnectFromPeripheralAsync(err)
@@ -146,7 +147,7 @@ class SignalboyService internal constructor(
                 }
 
                 client.connectAsync(device).also {
-                    (client.state as? State.Connected)?.let(::ensureHasSignalboyGattAttributes)
+                    (client.state as? ClientState.Connected)?.let(::ensureHasSignalboyGattAttributes)
                 }
                 Log.i(TAG, "Successfully connected to peripheral.")
 
@@ -164,7 +165,7 @@ class SignalboyService internal constructor(
                         is CancellationException -> null    // Connection attempt was cancelled by user-request.
                         else -> err
                     }
-                    _latestConnectionState.value = ConnectionState.Disconnected(publicDisconnectCause)
+                    _latestState.value = State.Disconnected(publicDisconnectCause)
 
                     throw err
                 }
@@ -192,7 +193,7 @@ class SignalboyService internal constructor(
             client.disconnectAsync()
 
             // Publish
-            _latestConnectionState.value = ConnectionState.Disconnected(disconnectCause)
+            _latestState.value = State.Disconnected(disconnectCause)
         }
     }
 
@@ -201,7 +202,7 @@ class SignalboyService internal constructor(
      * features are missing.
      *
      */
-    private fun ensureHasSignalboyGattAttributes(connectedState: State.Connected) {
+    private fun ensureHasSignalboyGattAttributes(connectedState: ClientState.Connected) {
         if (!connectedState.services.hasAllSignalboyGattAttributes())
             throw GattClientIsMissingAttributesException()
     }
@@ -257,16 +258,17 @@ class SignalboyService internal constructor(
     //endregion
 
     //region Factory
-    private fun convertFromClientState(state: State): ConnectionState = when (state) {
-        is State.Disconnected -> ConnectionState.Disconnected(state.cause)
-        is State.Connecting -> ConnectionState.Connecting
-        is State.Connected -> ConnectionState.Connected
-    }
+    private fun makeState(connectionState: ClientState, syncState: SyncState): State =
+        when (connectionState) {
+            is ClientState.Disconnected -> State.Disconnected(connectionState.cause)
+            is ClientState.Connecting -> State.Connecting
+            is ClientState.Connected -> State.Connected(syncState is SyncState.Synced)
+        }
     //endregion
 
-    sealed interface ConnectionState {
-        data class Disconnected(val cause: Throwable? = null) : ConnectionState
-        object Connecting : ConnectionState
-        object Connected : ConnectionState
+    sealed interface State {
+        data class Disconnected(val cause: Throwable? = null) : State
+        object Connecting : State
+        data class Connected(val isSynced: Boolean) : State
     }
 }

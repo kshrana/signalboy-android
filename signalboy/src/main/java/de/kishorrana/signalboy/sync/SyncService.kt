@@ -15,11 +15,17 @@ import de.kishorrana.signalboy.sync.State.*
 import de.kishorrana.signalboy.util.fromByteArrayLE
 import de.kishorrana.signalboy.util.toByteArrayLE
 import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlin.coroutines.CoroutineContext
 
 private const val TAG = "SignalboySyncService"
 
 internal class SyncService {
+    private val _latestState: MutableStateFlow<State> = MutableStateFlow(Detached)
+    val latestState: StateFlow<State> = _latestState.asStateFlow()
+
     private val stateManager = StateManager()
     private var syncing: Job? = null
 
@@ -39,6 +45,9 @@ internal class SyncService {
     }
 
     inner class StateManager {
+        val state: State
+            get() = stateMachine.state
+
         private val stateMachine = StateMachine.create<State, Event, SideEffect> {
             initialState(Detached)
             state<Detached> {
@@ -89,6 +98,18 @@ internal class SyncService {
                     dontTransition()
                 }
             }
+            onTransition {
+                val validTransition =
+                    it as? StateMachine.Transition.Valid ?: return@onTransition
+
+                if (validTransition.sideEffect != null) {
+                    throw NotImplementedError() // No side-effects implemented yet
+                }
+
+                if (validTransition.fromState != validTransition.toState) {
+                    _latestState.value = state
+                }
+            }
         }
 
         fun handleEvent(event: Event) {
@@ -101,9 +122,10 @@ internal class SyncService {
                 val initialValue = client.readGattCharacteristicAsync(TimeNeedsSyncCharacteristic)
 
                 // Subscribe
-                val subscription = client.startNotifyAsync(TimeNeedsSyncCharacteristic) { (newValue) ->
-                    handleTimeNeedsSyncCharacteristicNotification(newValue)
-                }
+                val subscription =
+                    client.startNotifyAsync(TimeNeedsSyncCharacteristic) { (newValue) ->
+                        handleTimeNeedsSyncCharacteristicNotification(newValue)
+                    }
 
                 stateMachine.transition(OnAttachSuccess(initialValue, subscription))
             }
