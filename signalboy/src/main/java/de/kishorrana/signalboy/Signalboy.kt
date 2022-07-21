@@ -9,7 +9,9 @@ import android.os.Build
 import android.util.Log
 import androidx.core.content.ContextCompat
 import de.kishorrana.signalboy.signalboyservice.SignalboyService
+import de.kishorrana.signalboy.signalboyservice.SignalboyService.ConnectionState
 import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.dropWhile
 
 private const val TAG = "Signalboy"
 
@@ -35,6 +37,7 @@ class Signalboy {
 
         private var service: SignalboyService? = null
         private var serviceStateObserving: Job? = null
+        private var connectionSupervising: Job? = null
 
         private var onConnectionStateUpdateListener: OnConnectionStateUpdateListener? = null
 
@@ -91,21 +94,27 @@ class Signalboy {
                 .apply {
                     serviceStateObserving?.cancel()
                     serviceStateObserving = scope.launch {
-                        latestConnectionState.collect { newValue ->
-                            withContext(Dispatchers.Main) {
-                                Log.d(TAG, "connectionState=$connectionState")
-                                onConnectionStateUpdateListener?.stateUpdated(newValue)
+                        latestConnectionState
+                            // Discard until first connection-attempt has been made.
+                            .dropWhile { it is ConnectionState.Disconnected }
+                            .collect { newValue ->
+                                withContext(Dispatchers.Main) {
+                                    Log.v(TAG, "connectionState=$connectionState")
+                                    onConnectionStateUpdateListener?.stateUpdated(newValue)
+                                }
                             }
-                        }
                     }
 
-                    tryConnectToPeripheral()
+                    connectionSupervising?.cancel()
+                    connectionSupervising = scope.launchConnectionSupervising(this)
                 }
         }
 
         @JvmStatic
         fun stop(completion: (() -> Unit)? = null) {
             scope.launch {
+                connectionSupervising?.cancelAndJoin()
+
                 service?.run {
                     try {
                         withTimeout(3_000L) {
@@ -133,7 +142,7 @@ class Signalboy {
          * @return Returns `null` when stopped, or Signalboy Service when started.
          */
         @JvmStatic
-        fun tryGetConnectionState(): SignalboyService.ConnectionState? = service?.connectionState
+        fun tryGetConnectionState(): ConnectionState? = service?.connectionState
 
         @JvmStatic
         fun tryTriggerSync(): Boolean = service?.tryTriggerSync() ?: false
@@ -148,6 +157,62 @@ class Signalboy {
             onConnectionStateUpdateListener = null
         }
 
+        //region Helper
+        /**
+         * Launches child-job that observes the connection-state of the specified SignalboyService-
+         * instance and triggers actions like reconnect when the connection is dropped.
+         *
+         * @param service
+         * @return The job that performs the supervision of the service's connection-state.
+         */
+        private fun CoroutineScope.launchConnectionSupervising(service: SignalboyService): Job =
+            launch {
+                suspend fun connect(reconnectAttempt: Int = 0) {
+                    // Backoff strategy
+                    val delayMillis: Long? = when (reconnectAttempt) {
+                        0 -> null
+                        1 -> 1 * 1_000L
+                        2 -> 5 * 1_000L
+                        3 -> 20 * 1_000L
+                        else -> 3 * MIN_IN_MILLISECONDS
+                    }
+                    if (delayMillis != null) {
+                        Log.i(
+                            TAG,
+                            "Will launch next connection attempt in ${delayMillis / 1_000}s (backoff-strategy)..."
+                        )
+                        delay(delayMillis)
+                    }
+
+                    try {
+                        service.connectToPeripheralAsync()
+                    } catch (cancellation: CancellationException) {
+                        throw cancellation  // Cancel this job by user-request.
+                    } catch (err: Throwable) {
+                        Log.w(
+                            TAG,
+                            "Connection attempt failed (reconnectAttempt=$reconnectAttempt) due to error:",
+                            err
+                        )
+                        connect(reconnectAttempt + 1)
+                    }
+                }
+
+                suspend fun reconnectIfNeeded(state: ConnectionState) {
+                    // Reconnect if connection was dropped due to an error.
+                    val disconnectCause = (state as? ConnectionState.Disconnected)?.cause
+                    if (disconnectCause != null) {
+                        Log.w(TAG, "Connection lost due to error:", disconnectCause)
+                        connect(1)
+                    }
+                }
+
+                connect()
+                service.latestConnectionState
+                    .collect { state -> reconnectIfNeeded(state) }
+            }
+        //endregion
+
         //region Factory
         private fun makeSignalboyService(context: Context, bluetoothAdapter: BluetoothAdapter):
                 SignalboyService = SignalboyService(context, bluetoothAdapter)
@@ -155,6 +220,6 @@ class Signalboy {
     }
 
     fun interface OnConnectionStateUpdateListener {
-        fun stateUpdated(state: SignalboyService.ConnectionState)
+        fun stateUpdated(state: ConnectionState)
     }
 }

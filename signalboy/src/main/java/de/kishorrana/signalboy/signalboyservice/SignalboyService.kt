@@ -1,7 +1,6 @@
 package de.kishorrana.signalboy.signalboyservice
 
 import android.bluetooth.BluetoothAdapter
-import android.bluetooth.BluetoothDevice
 import android.content.Context
 import android.util.Log
 import de.kishorrana.signalboy.*
@@ -56,7 +55,7 @@ class SignalboyService internal constructor(
     val latestConnectionState = _latestConnectionState.asStateFlow()
 
     // Will be `true`, if establishing a connection has succeeded.
-    private var connecting: Deferred<Boolean>? = null
+    private var connecting: Job? = null
     private var clientStateObserving: Job? = null
 
     private var syncServiceCoroutineContext: CoroutineContext? = null
@@ -65,12 +64,6 @@ class SignalboyService internal constructor(
     fun destroy() {
         client.destroy()
         scope.cancel("Parent SignalboyService-instance will be destroyed.")
-    }
-
-    fun tryConnectToPeripheral() {
-        scope.launch {
-            tryOrPublishFailedConnectionState { connectToPeripheralAsync() }
-        }
     }
 
     fun tryDisconnectFromPeripheral() {
@@ -104,87 +97,88 @@ class SignalboyService internal constructor(
         return true
     }
 
-    private suspend fun connectToPeripheralAsync() = coroutineScope {
+    suspend fun connectToPeripheralAsync() = coroutineScope {
         Log.v(TAG, "connectToPeripheralAsync: I'm working in thread ${Thread.currentThread().name}")
         if (connecting?.isActive == true) {
             throw AlreadyConnectingException()
         }
 
-        val connecting = async {
-            _latestConnectionState.value = ConnectionState.Connecting
-
-            // Try to discover Peripheral.
-            val device: BluetoothDevice
+        connecting = launch {
             try {
+                _latestConnectionState.value = ConnectionState.Connecting
+
+                // Try to discover Peripheral.
                 val devices = Scanner(bluetoothAdapter).discoverPeripherals(
                     SignalboyGattAttributes.OUTPUT_SERVICE_UUID,
                     SCAN_PERIOD_IN_MILLIS,
                     true
                 )
-                Log.d(TAG, "Discovered devices (which match set filters): $devices")
+                Log.d(TAG, "Discovered devices (matching set filters): $devices")
 
-                device = devices
-                    .firstOrNull() ?: throw NoCompatiblePeripheralDiscovered(
+                val device = devices.firstOrNull() ?: throw NoCompatiblePeripheralDiscovered(
                     "Cannot connect: No peripheral matching set filters found during scan."
                 )
-            } catch (err: Throwable) {
-                throw err
-            }
 
-            // Try connecting to Peripheral.
-            // But first setup observer for Client's connection-state and forward any events to
-            // `self`'s `latestConnectionState`-Publisher.
-            clientStateObserving?.cancelAndJoin()
-            clientStateObserving = scope.launch {
-                try {
-                    client.latestState
-                        .onCompletion { err ->
-                            // Observer is expected to complete when `clientStateObserving`-
-                            // Job is cancelled.
-                            Log.v(
-                                TAG, "clientStateObserving: Completion due to error:", err
-                            )
-                        }
-                        // Drop initial "Disconnected"-events as StateFlow emits
-                        // initial value on subscribing.
-                        .dropWhile { it is State.Disconnected }
-                        .onEach { (it as? State.Connected)?.let(::ensureHasSignalboyGattAttributes) }
-                        .map(::convertFromClientState)
-                        .collect { _latestConnectionState.value = it }
-                } catch (err: GattClientIsMissingAttributesException) {
-                    Log.d(TAG, "clientStateObserving: caught error:", err)
-                    disconnectFromPeripheralAsync(err)
-                    // TODO: Or should rather start another attempt to connect automatically?
+                // Try connecting to Peripheral.
+                // But first setup observer for Client's connection-state and forward any events to
+                // `self`'s `latestConnectionState`-Publisher.
+                clientStateObserving?.cancelAndJoin()
+                clientStateObserving = scope.launch {
+                    try {
+                        client.latestState
+                            .onCompletion { err ->
+                                // Observer is expected to complete when `clientStateObserving`-
+                                // Job is cancelled.
+                                Log.v(
+                                    TAG, "clientStateObserving: Completion due to error:", err
+                                )
+                            }
+                            // Drop initial "Disconnected"-events as StateFlow emits
+                            // initial value on subscribing.
+                            .dropWhile { it is State.Disconnected }
+                            .onEach { (it as? State.Connected)?.let(::ensureHasSignalboyGattAttributes) }
+                            .map(::convertFromClientState)
+                            .collect { _latestConnectionState.value = it }
+                    } catch (err: GattClientIsMissingAttributesException) {
+                        Log.d(TAG, "clientStateObserving: caught error:", err)
+                        disconnectFromPeripheralAsync(err)
+                    }
                 }
-            }
 
-            try {
                 client.connectAsync(device).also {
                     (client.state as? State.Connected)?.let(::ensureHasSignalboyGattAttributes)
                 }
+                Log.i(TAG, "Successfully connected to peripheral.")
+
+                startSyncService()
             } catch (err: Throwable) {
-                disconnectFromPeripheralAsync(err)
-                throw err
-            }
-                .also {
-                    if (it)
-                        Log.i(TAG, "Successfully connected to peripheral.")
-                    else
-                        Log.i(TAG, "Failed to connect to peripheral.")
+                withContext(NonCancellable) {
+                    // Abort connection attempt.
+                    stopSyncService()
+
+                    clientStateObserving?.cancelAndJoin()
+                    client.disconnectAsync()
+
+                    // Publish
+                    val publicDisconnectCause = when (err) {
+                        is CancellationException -> null    // Connection attempt was cancelled by user-request.
+                        else -> err
+                    }
+                    _latestConnectionState.value = ConnectionState.Disconnected(publicDisconnectCause)
+
+                    throw err
                 }
+            }
         }
-            .also { connecting = it }
-
-        if (!connecting.await())    // Failed to establish connection.
-            return@coroutineScope
-
-        startSyncService()
     }
 
     private suspend fun disconnectFromPeripheralAsync(disconnectCause: Throwable?) {
         try {
-            stopSyncService()
             clientStateObserving?.cancelAndJoin()
+            connecting?.cancelAndJoin()
+            stopSyncService()
+        } catch (cancellation: CancellationException) {
+            throw cancellation
         } catch (err: Throwable) {
             Log.v(
                 TAG,
@@ -195,11 +189,10 @@ class SignalboyService internal constructor(
             )
             throw err
         } finally {
-            withContext(NonCancellable) {
-                client.disconnectAsync()
-                // Publish
-                _latestConnectionState.value = ConnectionState.Disconnected(disconnectCause)
-            }
+            client.disconnectAsync()
+
+            // Publish
+            _latestConnectionState.value = ConnectionState.Disconnected(disconnectCause)
         }
     }
 
@@ -214,19 +207,6 @@ class SignalboyService internal constructor(
     }
 
     //region Helper
-    private suspend fun <R> tryOrPublishFailedConnectionState(
-        block: suspend () -> R
-    ) {
-        try {
-            block()
-        } catch (cancellationError: CancellationException) {
-            // Connection attempt was cancelled gracefully.
-            _latestConnectionState.value = ConnectionState.Disconnected(null)
-        } catch (err: Throwable) {
-            _latestConnectionState.value = ConnectionState.Disconnected(err)
-        }
-    }
-
     private fun CoroutineScope.launchSyncService(client: Client, attempt: Int = 1) {
         Log.v(TAG, "Launching SyncService (attempt=$attempt).")
         if (syncServiceCoroutineContext?.isActive == true) {
@@ -244,9 +224,10 @@ class SignalboyService internal constructor(
             syncServiceRestarting = launch {
                 // Backoff strategy
                 val delayMillis: Long = when (attempt) {
-                    1 -> 5 * 1_000
-                    2 -> 30 * 1_000
-                    else -> 3 * MILLISECONDS_IN_MIN
+                    1 -> 3 * 1_000L
+                    2 -> 10 * 1_000L
+                    3 -> 30 * 1_000L
+                    else -> 3 * MIN_IN_MILLISECONDS
                 }
                 Log.i(
                     TAG, "Next attempt to start SyncService in ${delayMillis / 1_000}s " +

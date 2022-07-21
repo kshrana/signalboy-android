@@ -18,6 +18,7 @@ import de.kishorrana.signalboy.client.util.writeDescriptor
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import java.util.*
+import kotlin.NoSuchElementException
 
 private const val TAG = "SignalboyClient"
 
@@ -55,22 +56,22 @@ internal class Client(context: Context, parentJob: Job? = null) {
         scope.cancel("Parent Client-instance will be destroyed.")
     }
 
-    suspend fun connectAsync(device: BluetoothDevice, retryCount: Int = 3): Boolean {
+    suspend fun connectAsync(device: BluetoothDevice, retryCount: Int = 3) {
         triggerConnect(device, retryCount)
 
         // await connect result
         return stateManager.latestState
-            .mapNotNull { state ->
+            .takeWhile { state ->
                 when (state) {
                     is Disconnected -> {
                         state.cause?.let { throw it }   // Disconnected due to connection error
-                            ?: false    // Disconnected gracefully (by user-request?)
+                            ?: throw ConnectionAttemptCancellationException()    // Disconnected gracefully (by user-request?)
                     }
-                    is Connecting -> null
-                    is Connected -> true
+                    is Connecting -> true
+                    is Connected -> false
                 }
             }
-            .first()
+            .collect()
     }
 
     suspend fun disconnectAsync() {
@@ -219,8 +220,18 @@ internal class Client(context: Context, parentJob: Job? = null) {
     }
 
     private fun stopNotify(notificationSubscription: NotificationSubscription) {
-        val elementToRemove = notificationSubscriptions.single { (_, value) ->
-            value == notificationSubscription
+        val elementToRemove: Pair<Pair<UUID, UUID>, Client.NotificationSubscription>
+        try {
+            elementToRemove = notificationSubscriptions.first { (_, value) ->
+                value == notificationSubscription
+            }
+        } catch (error: NoSuchElementException) {
+            Log.v(
+                TAG,
+                "Failed to find record for notification subscription. Its corresponding GATT-Client" +
+                        "may have been dropped before. - notificationSubscription=$notificationSubscription"
+            )
+            return
         }
         notificationSubscriptions.remove(elementToRemove)
 

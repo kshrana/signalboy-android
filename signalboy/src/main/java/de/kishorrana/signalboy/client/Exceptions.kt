@@ -4,10 +4,11 @@ import android.bluetooth.BluetoothGatt
 import de.kishorrana.signalboy.util.toHexString
 
 // Exceptions thrown during connection-attempt:
-class NoConnectionAttemptsLeftException : RuntimeException()
+class NoConnectionAttemptsLeftException : IllegalStateException()
+class ConnectionAttemptCancellationException : IllegalStateException()
 
 // Exceptions thrown after a connection has been established:
-class ConnectionTimeoutException : RuntimeException()
+class ConnectionTimeoutException : IllegalStateException()
 
 class OperationNotSupportedByCurrentStateException internal constructor(state: State) :
     IllegalStateException(
@@ -16,14 +17,14 @@ class OperationNotSupportedByCurrentStateException internal constructor(state: S
     )
 
 // Thrown when GATT-Service Discovery operation failed for a connected Signalboy-peripheral.
-class ServiceDiscoveryFailed(val gattClient: BluetoothGatt) : RuntimeException()
+class ServiceDiscoveryFailed(val gattClient: BluetoothGatt) : IllegalStateException()
 
-class ServiceNotFoundException : RuntimeException()
-class CharacteristicNotFoundException : RuntimeException()
-class DescriptorNotFoundException : RuntimeException()
+class ServiceNotFoundException : IllegalStateException()
+class CharacteristicNotFoundException : IllegalStateException()
+class DescriptorNotFoundException : IllegalStateException()
 
 // IO
-class FailedToStartAsyncOperationException : RuntimeException()
-class AsyncOperationFailedException(val status: Int) : RuntimeException(
+class FailedToStartAsyncOperationException : IllegalStateException()
+class AsyncOperationFailedException(val status: Int) : IllegalStateException(
     "Async operation failed with status-code: ${status.toByte().toHexString()}"
 )
