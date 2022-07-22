@@ -6,13 +6,17 @@ import android.util.Log
 import de.kishorrana.signalboy.*
 import de.kishorrana.signalboy.client.Client
 import de.kishorrana.signalboy.client.endpoint.readGattCharacteristicAsync
+import de.kishorrana.signalboy.client.endpoint.writeGattCharacteristicAsync
 import de.kishorrana.signalboy.client.util.hasAllSignalboyGattAttributes
+import de.kishorrana.signalboy.gatt.*
 import de.kishorrana.signalboy.gatt.HardwareRevisionCharacteristic
-import de.kishorrana.signalboy.gatt.SignalboyDeviceInformation
 import de.kishorrana.signalboy.gatt.SignalboyGattAttributes
 import de.kishorrana.signalboy.gatt.SoftwareRevisionCharacteristic
+import de.kishorrana.signalboy.gatt.TargetTimestampCharacteristic
 import de.kishorrana.signalboy.scanner.Scanner
 import de.kishorrana.signalboy.sync.SyncService
+import de.kishorrana.signalboy.util.now
+import de.kishorrana.signalboy.util.toByteArrayLE
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import java.nio.charset.StandardCharsets
@@ -29,7 +33,16 @@ class SignalboyService internal constructor(
     // s. Android SDK documentation for a reference implementation:
     // https://developer.android.com/guide/topics/connectivity/bluetooth/connect-gatt-server#setup-bound-service
     private val context: Context,
-    private val bluetoothAdapter: BluetoothAdapter
+    private val bluetoothAdapter: BluetoothAdapter,
+    /**
+     * The fixed-delay that the resulting signals emitted by the Signalboy-device will be delayed.
+     *
+     * DISCUSSION: This delay is utilized to normalize the delay caused by network-latency (Bluetooth).
+     * In order to produce the actual event-times, the (third-party) receiving system will have
+     * to subtract the specified Normalization-Delay from the timestamps of the received
+     * electronic TTL-events.
+     */
+    private val normalizationDelay: Long
 ) {
     val state: State
         get() = latestState.value
@@ -176,6 +189,32 @@ class SignalboyService internal constructor(
         }
     }
 
+    suspend fun sendEvent() {
+        val firedateTimestamp = now() + normalizationDelay
+
+        val isSynced = when (val state = state) {
+            is State.Connected -> state.isSynced
+            else -> return
+        }
+
+        if (isSynced) {
+            val data = firedateTimestamp.toUInt().toByteArrayLE()
+            client.writeGattCharacteristicAsync(TargetTimestampCharacteristic, data, false)
+        } else {
+            // Fallback to unsynced method.
+            Log.w(
+                TAG, "Falling back to unsynced signaling of event as connected peripheral is " +
+                        "not synced. Timing will be inaccurate."
+            )
+            delay(firedateTimestamp - now())
+            client.writeGattCharacteristicAsync(
+                TriggerTimerCharacteristic,
+                byteArrayOf(0x01),
+                false
+            )
+        }
+    }
+
     private suspend fun disconnectFromPeripheralAsync(disconnectCause: Throwable?) {
         try {
             clientStateObserving?.cancelAndJoin()
@@ -227,7 +266,7 @@ class SignalboyService internal constructor(
 
         val childJob = Job(coroutineContext.job) + CoroutineName("SyncService")
         val exceptionHandler = CoroutineExceptionHandler { _, err ->
-            Log.i(TAG, "SyncService (job=$childJob) failed with error:", err)
+            Log.e(TAG, "SyncService (job=$childJob) failed with error:", err)
             // Stop service before next startup attempt.
             stopSyncService()
             childJob.cancel()

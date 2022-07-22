@@ -86,11 +86,15 @@ class Signalboy {
          *
          */
         @JvmStatic
-        fun start(context: Context, bluetoothAdapter: BluetoothAdapter) {
+        fun start(
+            context: Context,
+            bluetoothAdapter: BluetoothAdapter,
+            configuration: Configuration = Configuration.Default
+        ) {
             if (service != null)
                 throw IllegalStateException("Signalboy Service is already started.")
 
-            service = makeSignalboyService(context, bluetoothAdapter)
+            service = makeSignalboyService(context, bluetoothAdapter, configuration)
                 .apply {
                     serviceStateObserving?.cancel()
                     serviceStateObserving = scope.launch {
@@ -157,6 +161,13 @@ class Signalboy {
             onConnectionStateUpdateListener = null
         }
 
+        @JvmStatic
+        fun sendEvent() {
+            service?.run {
+                scope.launch { sendEvent() }
+            } ?: throw IllegalStateException("Signalboy is not started.")
+        }
+
         //region Helper
         /**
          * Launches child-job that observes the connection-state of the specified SignalboyService-
@@ -214,9 +225,32 @@ class Signalboy {
         //endregion
 
         //region Factory
-        private fun makeSignalboyService(context: Context, bluetoothAdapter: BluetoothAdapter):
-                SignalboyService = SignalboyService(context, bluetoothAdapter)
+        private fun makeSignalboyService(
+            context: Context,
+            bluetoothAdapter: BluetoothAdapter,
+            configuration: Configuration,
+        ): SignalboyService {
+            val (normalizationDelay) = configuration
+
+            return SignalboyService(context, bluetoothAdapter, normalizationDelay)
+        }
         //endregion
+    }
+
+    data class Configuration(
+        /**
+         * The fixed-delay that the resulting signage emitted by the Signalboy-device will be delayed.
+         *
+         * DISCUSSION: This delay is utilized to normalize the delay caused by network-latency (Bluetooth).
+         * In order to produce the actual event-times, the (third-party) receiving system will have
+         * to subtract the specified Normalization-Delay from the timestamps of the received
+         * electronic TTL-events.
+         */
+        val normalizationDelay: Long
+    ) {
+        companion object {
+            val Default: Configuration by lazy { Configuration(normalizationDelay = 300L) }
+        }
     }
 
     fun interface OnConnectionStateUpdateListener {

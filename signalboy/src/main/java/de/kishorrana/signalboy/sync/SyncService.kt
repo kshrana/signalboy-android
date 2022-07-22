@@ -13,11 +13,13 @@ import de.kishorrana.signalboy.gatt.TimeNeedsSyncCharacteristic
 import de.kishorrana.signalboy.sync.Event.*
 import de.kishorrana.signalboy.sync.State.*
 import de.kishorrana.signalboy.util.fromByteArrayLE
+import de.kishorrana.signalboy.util.now
 import de.kishorrana.signalboy.util.toByteArrayLE
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlin.IllegalStateException
 import kotlin.coroutines.CoroutineContext
 
 private const val TAG = "SignalboySyncService"
@@ -54,11 +56,13 @@ internal class SyncService {
                 on<OnAttachRequest> {
                     val (context, client) = it
 
-                    val scope = CoroutineScope(context)
-                        .apply { launchTimeNeedsSyncSubscriptionSetup(client) }
+                    val scope = CoroutineScope(context).apply {
+                        launchTimeNeedsSyncSubscriptionSetup(client)
+                    }
                     transitionTo(Attaching(scope, client))
                 }
                 on<OnSyncRequired> { throw IllegalStateException(this) }
+                on<OnSyncRequest> { throw IllegalStateException(this) }
             }
             state<Attaching> {
                 on<OnDetachRequest> {
@@ -74,6 +78,7 @@ internal class SyncService {
                     }
                 }
                 on<OnSyncRequired> { throw IllegalStateException(this) }
+                on<OnSyncRequest> { throw IllegalStateException(this) }
             }
             state<Training> {
                 on<OnDetachRequest> {
@@ -81,6 +86,7 @@ internal class SyncService {
                     transitionTo(Detached)
                 }
                 on<OnSyncRequired> { throw AlreadyTrainingException() }
+                on<OnSyncRequest> { throw AlreadyTrainingException() }
                 on<OnTrainingTimeout> { throw TrainingTimeoutException() }
                 on<OnSyncSatisfy> { transitionTo(Synced(scope, client, timeNeedsSyncSubscription)) }
             }
@@ -222,8 +228,6 @@ internal class SyncService {
         }
 
         //region Helpers
-        private fun now() = System.currentTimeMillis()
-
         private fun sleep(until: Long): Int {
             var cycles = 0
             while (until - now() > 0) {

@@ -12,6 +12,7 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.lifecycleScope
 import com.example.signalboycentral.databinding.ActivityMainBinding
 import com.google.android.material.shape.ShapeAppearanceModel
 import com.google.android.material.snackbar.Snackbar
@@ -24,6 +25,8 @@ import de.kishorrana.signalboy.client.NoConnectionAttemptsLeftException
 import de.kishorrana.signalboy.scanner.AlreadyScanningException
 import de.kishorrana.signalboy.scanner.BluetoothLeScanFailed
 import de.kishorrana.signalboy.signalboyservice.SignalboyService.State
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 
 private const val TAG = "MainActivity"
 
@@ -45,6 +48,8 @@ class MainActivity : AppCompatActivity(), ActivityCompat.OnRequestPermissionsRes
 
     private val pendingPermissionRequests = mutableListOf<Int>()
 
+    private var testing: Job? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -54,8 +59,17 @@ class MainActivity : AppCompatActivity(), ActivityCompat.OnRequestPermissionsRes
         setSupportActionBar(binding.toolbar)
 
         binding.fab.setOnClickListener { onFabClicked() }
-        binding.contentMain.buttonSync.setOnClickListener {
-            Signalboy.tryTriggerSync()
+        binding.contentMain.buttonSync.setOnClickListener { Signalboy.tryTriggerSync() }
+        binding.contentMain.buttonTest.apply {
+            setOnClickListener {
+                if (testing?.isActive == true) {
+                    testing?.cancel()
+                    text = getString(R.string.button_test_start)
+                } else {
+                    testing = lifecycleScope.launch { TestRunner().execute() }
+                    text = getString(R.string.button_test_stop)
+                }
+            }
         }
         binding.contentMain.imageViewBtStatus.shapeAppearanceModel = ShapeAppearanceModel.builder()
             .setAllCornerSizes(ShapeAppearanceModel.PILL)

@@ -5,6 +5,7 @@
     <string name="ok">OK</string>
 
     <!-- Strings used for fragments for navigation -->
-    <string name="button_first">Trigger sync manually</string>
-    <string name="button_second">Perform Test</string>
+    <string name="button_sync_trigger">Trigger sync manually</string>
+    <string name="button_test_start">Start Test</string>
+    <string name="button_test_stop">Finish Test</string>
 </resources>
