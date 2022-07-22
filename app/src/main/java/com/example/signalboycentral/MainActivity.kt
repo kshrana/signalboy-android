@@ -234,8 +234,14 @@ class MainActivity : AppCompatActivity(), ActivityCompat.OnRequestPermissionsRes
             }
 
             is State.Connected -> {
+                val (deviceInformation, isSynced) = connectionState
+
                 binding.contentMain.textPrimary.text = "Connected"
-                binding.contentMain.textSecondary.text = "isSynced=${connectionState.isSynced}"
+                binding.contentMain.textSecondary.text =
+                    "• Device Information:" +
+                            "\n\t• hardware-revision=${deviceInformation.hardwareRevision}" +
+                            "\n\t• software-revision=${deviceInformation.softwareRevision}" +
+                            "\n• isSynced=$isSynced"
                 setImageViewDrawable(R.drawable.baseline_bluetooth_connected_black_24dp)
             }
 

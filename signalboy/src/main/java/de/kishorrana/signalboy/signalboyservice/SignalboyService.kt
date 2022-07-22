@@ -5,15 +5,20 @@ import android.content.Context
 import android.util.Log
 import de.kishorrana.signalboy.*
 import de.kishorrana.signalboy.client.Client
-import de.kishorrana.signalboy.client.State as ClientState
+import de.kishorrana.signalboy.client.endpoint.readGattCharacteristicAsync
 import de.kishorrana.signalboy.client.util.hasAllSignalboyGattAttributes
+import de.kishorrana.signalboy.gatt.HardwareRevisionCharacteristic
+import de.kishorrana.signalboy.gatt.SignalboyDeviceInformation
 import de.kishorrana.signalboy.gatt.SignalboyGattAttributes
+import de.kishorrana.signalboy.gatt.SoftwareRevisionCharacteristic
 import de.kishorrana.signalboy.scanner.Scanner
-import de.kishorrana.signalboy.sync.State as SyncState
 import de.kishorrana.signalboy.sync.SyncService
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
+import java.nio.charset.StandardCharsets
 import kotlin.coroutines.CoroutineContext
+import de.kishorrana.signalboy.client.State as ClientState
+import de.kishorrana.signalboy.sync.State as SyncState
 
 private const val TAG = "SignalboyService"
 
@@ -56,7 +61,7 @@ class SignalboyService internal constructor(
     val latestState = _latestState.asStateFlow()
 
     // Will be `true`, if establishing a connection has succeeded.
-    private var connecting: Job? = null
+    private var connecting: Deferred<SignalboyDeviceInformation>? = null
     private var clientStateObserving: Job? = null
 
     private var syncServiceCoroutineContext: CoroutineContext? = null
@@ -104,7 +109,7 @@ class SignalboyService internal constructor(
             throw AlreadyConnectingException()
         }
 
-        connecting = launch {
+        connecting = async {
             try {
                 _latestState.value = State.Connecting
 
@@ -121,8 +126,20 @@ class SignalboyService internal constructor(
                 )
 
                 // Try connecting to Peripheral.
-                // But first setup observer for Client's connection-state and forward any events to
-                // `self`'s `latestState`-Publisher.
+                client.connectAsync(device).also {
+                    (client.state as? ClientState.Connected)?.let(::ensureHasSignalboyGattAttributes)
+                }
+                val deviceInformation = SignalboyDeviceInformation(
+                    String(
+                        client.readGattCharacteristicAsync(HardwareRevisionCharacteristic),
+                        StandardCharsets.US_ASCII
+                    ),
+                    String(
+                        client.readGattCharacteristicAsync(SoftwareRevisionCharacteristic),
+                        StandardCharsets.US_ASCII
+                    )
+                )
+
                 clientStateObserving?.cancelAndJoin()
                 clientStateObserving = scope.launch {
                     try {
@@ -134,41 +151,27 @@ class SignalboyService internal constructor(
                                     TAG, "clientStateObserving: Completion due to error:", err
                                 )
                             }
-                            // Drop initial "Disconnected"-events as StateFlow emits
-                            // initial value on subscribing.
-                            .dropWhile { it is ClientState.Disconnected }
                             .onEach { (it as? ClientState.Connected)?.let(::ensureHasSignalboyGattAttributes) }
-                            .combine(syncService.latestState, ::makeState)
+                            .combine(syncService.latestState) { clientState, syncState ->
+                                makeState(clientState, syncState, deviceInformation)
+                            }
                             .collect { _latestState.value = it }
                     } catch (err: GattClientIsMissingAttributesException) {
                         Log.d(TAG, "clientStateObserving: caught error:", err)
-                        disconnectFromPeripheralAsync(err)
+                        scope.launch { disconnectFromPeripheralAsync(err) }
                     }
-                }
-
-                client.connectAsync(device).also {
-                    (client.state as? ClientState.Connected)?.let(::ensureHasSignalboyGattAttributes)
                 }
                 Log.i(TAG, "Successfully connected to peripheral.")
 
                 startSyncService()
+                return@async deviceInformation
             } catch (err: Throwable) {
-                withContext(NonCancellable) {
-                    // Abort connection attempt.
-                    stopSyncService()
-
-                    clientStateObserving?.cancelAndJoin()
-                    client.disconnectAsync()
-
-                    // Publish
-                    val publicDisconnectCause = when (err) {
-                        is CancellationException -> null    // Connection attempt was cancelled by user-request.
-                        else -> err
-                    }
-                    _latestState.value = State.Disconnected(publicDisconnectCause)
-
-                    throw err
+                val publicDisconnectCause = when (err) {
+                    is CancellationException -> null    // Connection attempt was cancelled by user-request.
+                    else -> err
                 }
+                scope.launch { disconnectFromPeripheralAsync(publicDisconnectCause) }
+                throw err
             }
         }
     }
@@ -178,8 +181,6 @@ class SignalboyService internal constructor(
             clientStateObserving?.cancelAndJoin()
             connecting?.cancelAndJoin()
             stopSyncService()
-        } catch (cancellation: CancellationException) {
-            throw cancellation
         } catch (err: Throwable) {
             Log.v(
                 TAG,
@@ -190,10 +191,20 @@ class SignalboyService internal constructor(
             )
             throw err
         } finally {
-            client.disconnectAsync()
-
-            // Publish
-            _latestState.value = State.Disconnected(disconnectCause)
+            try {
+                client.disconnectAsync()
+            } catch (err: Throwable) {
+                Log.v(
+                    TAG,
+                    "disconnectFromPeripheralAsync() - Encountered error during " +
+                            "disconnect-attempt. Error:",
+                    err
+                )
+                throw err
+            } finally {
+                // Publish
+                _latestState.value = State.Disconnected(disconnectCause)
+            }
         }
     }
 
@@ -258,17 +269,26 @@ class SignalboyService internal constructor(
     //endregion
 
     //region Factory
-    private fun makeState(connectionState: ClientState, syncState: SyncState): State =
-        when (connectionState) {
-            is ClientState.Disconnected -> State.Disconnected(connectionState.cause)
-            is ClientState.Connecting -> State.Connecting
-            is ClientState.Connected -> State.Connected(syncState is SyncState.Synced)
-        }
+    private fun makeState(
+        connectionState: ClientState,
+        syncState: SyncState,
+        deviceInformation: SignalboyDeviceInformation
+    ): State = when (connectionState) {
+        is ClientState.Disconnected -> State.Disconnected(connectionState.cause)
+        is ClientState.Connecting -> State.Connecting
+        is ClientState.Connected -> State.Connected(
+            deviceInformation,
+            syncState is SyncState.Synced
+        )
+    }
     //endregion
 
     sealed interface State {
         data class Disconnected(val cause: Throwable? = null) : State
         object Connecting : State
-        data class Connected(val isSynced: Boolean) : State
+        data class Connected(
+            val deviceInformation: SignalboyDeviceInformation,
+            val isSynced: Boolean
+        ) : State
     }
 }

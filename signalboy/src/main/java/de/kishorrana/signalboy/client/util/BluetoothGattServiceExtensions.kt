@@ -1,6 +1,8 @@
 package de.kishorrana.signalboy.client.util
 
 import android.bluetooth.BluetoothGattService
+import de.kishorrana.signalboy.GattClientIsMissingAttributesException
+import de.kishorrana.signalboy.gatt.*
 import de.kishorrana.signalboy.gatt.SignalboyGattAttributes
 
 internal fun Collection<BluetoothGattService>.hasAllSignalboyGattAttributes(): Boolean {

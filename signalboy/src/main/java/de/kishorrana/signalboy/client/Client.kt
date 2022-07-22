@@ -2,12 +2,11 @@ package de.kishorrana.signalboy.client
 
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothGatt
+import android.bluetooth.BluetoothGattCharacteristic
 import android.bluetooth.BluetoothGattDescriptor
 import android.content.Context
 import android.util.Log
-import de.kishorrana.signalboy.CLIENT_CONFIGURATION_DESCRIPTOR_UUID
-import de.kishorrana.signalboy.GATT_STATUS_SUCCESS
-import de.kishorrana.signalboy.client.ClientBluetoothGattCallback.GattOperationCallback.*
+import de.kishorrana.signalboy.client.ClientBluetoothGattCallback.GattOperationResponse.*
 import de.kishorrana.signalboy.client.Event.OnConnectionRequested
 import de.kishorrana.signalboy.client.Event.OnDisconnectRequested
 import de.kishorrana.signalboy.client.State.*
@@ -15,10 +14,11 @@ import de.kishorrana.signalboy.client.util.readCharacteristic
 import de.kishorrana.signalboy.client.util.setCharacteristicNotification
 import de.kishorrana.signalboy.client.util.writeCharacteristic
 import de.kishorrana.signalboy.client.util.writeDescriptor
+import de.kishorrana.signalboy.gatt.CLIENT_CONFIGURATION_DESCRIPTOR_UUID
+import de.kishorrana.signalboy.gatt.GATT_STATUS_SUCCESS
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import java.util.*
-import kotlin.NoSuchElementException
 
 private const val TAG = "SignalboyClient"
 
@@ -59,7 +59,7 @@ internal class Client(context: Context, parentJob: Job? = null) {
     suspend fun connectAsync(device: BluetoothDevice, retryCount: Int = 3) {
         triggerConnect(device, retryCount)
 
-        // await connect result
+        // await connect response
         return stateManager.latestState
             .takeWhile { state ->
                 when (state) {
@@ -94,21 +94,15 @@ internal class Client(context: Context, parentJob: Job? = null) {
     ): ByteArray {
         readGattCharacteristic(service, characteristic)
 
-        val result = gattCallback.asyncOperationCallbackFlow
-            .mapNotNull { it as? CharacteristicReadCallback }
+        val response = gattCallback.asyncOperationResponseFlow
+            .mapNotNull { it as? CharacteristicReadResponse }
             .first()
+        response.characteristic.ensureIdentity(service, characteristic)
 
-        if (characteristic != result.characteristic.uuid)
-            throw IllegalStateException(
-                "Received result for wrong characteristic. " +
-                        "(characteristic.uuid=${characteristic} " +
-                        "result.characteristic.uuid=${result.characteristic.uuid})"
-            )
+        if (response.status != GATT_STATUS_SUCCESS)
+            throw AsyncOperationFailedException(response.status)
 
-        if (result.status != GATT_STATUS_SUCCESS)
-            throw AsyncOperationFailedException(result.status)
-
-        return result.characteristic.value
+        return response.characteristic.value
     }
 
     fun readGattCharacteristic(
@@ -136,19 +130,13 @@ internal class Client(context: Context, parentJob: Job? = null) {
     ) {
         writeGattCharacteristic(service, characteristic, data, shouldWaitForResponse)
 
-        val result = gattCallback.asyncOperationCallbackFlow
-            .mapNotNull { it as? CharacteristicWriteCallback }
+        val response = gattCallback.asyncOperationResponseFlow
+            .mapNotNull { it as? CharacteristicWriteResponse }
             .first()
+        response.characteristic.ensureIdentity(service, characteristic)
 
-        if (characteristic != result.characteristic.uuid)
-            throw IllegalStateException(
-                "Received result for wrong characteristic. " +
-                        "(characteristic.uuid=${characteristic} " +
-                        "result.characteristic.uuid=${result.characteristic.uuid})"
-            )
-
-        if (result.status != GATT_STATUS_SUCCESS)
-            throw AsyncOperationFailedException(result.status)
+        if (response.status != GATT_STATUS_SUCCESS)
+            throw AsyncOperationFailedException(response.status)
     }
 
     fun writeGattCharacteristic(
@@ -170,27 +158,13 @@ internal class Client(context: Context, parentJob: Job? = null) {
     ) {
         writeGattDescriptor(service, characteristic, descriptor, data)
 
-        val result = gattCallback.asyncOperationCallbackFlow
-            .mapNotNull { it as? DescriptorWriteCallback }
+        val response = gattCallback.asyncOperationResponseFlow
+            .mapNotNull { it as? DescriptorWriteResponse }
             .first()
+        response.descriptor.ensureIdentity(service, characteristic, descriptor)
 
-        val callbackCharacteristicUUID = result.descriptor.characteristic.uuid
-        if (characteristic != callbackCharacteristicUUID)
-            throw IllegalStateException(
-                "Received result for wrong characteristic. " +
-                        "(characteristic.uuid=${characteristic} " +
-                        "callbackCharacteristicUUID=${callbackCharacteristicUUID})"
-            )
-
-        if (descriptor != result.descriptor.uuid)
-            throw IllegalStateException(
-                "Received result for wrong descriptor. " +
-                        "(descriptor.uuid=${descriptor} " +
-                        "result.descriptor.uuid=${result.descriptor.uuid})"
-            )
-
-        if (result.status != GATT_STATUS_SUCCESS)
-            throw AsyncOperationFailedException(result.status)
+        if (response.status != GATT_STATUS_SUCCESS)
+            throw AsyncOperationFailedException(response.status)
     }
 
     fun writeGattDescriptor(
@@ -220,7 +194,7 @@ internal class Client(context: Context, parentJob: Job? = null) {
     }
 
     private fun stopNotify(notificationSubscription: NotificationSubscription) {
-        val elementToRemove: Pair<Pair<UUID, UUID>, Client.NotificationSubscription>
+        val elementToRemove: Pair<Pair<UUID, UUID>, NotificationSubscription>
         try {
             elementToRemove = notificationSubscriptions.first { (_, value) ->
                 value == notificationSubscription
@@ -281,20 +255,20 @@ internal class Client(context: Context, parentJob: Job? = null) {
     private fun setupGattCallbackObserving() {
         scope.launch {
             launch {
-                gattCallback.connectionStateChangeCallbackFlow.collect { (newState, status) ->
+                gattCallback.connectionStateChangeResponseFlow.collect { (newState, status) ->
                     stateManager.handleEvent(Event.OnGattConnectionStateChange(newState, status))
                 }
             }
             launch {
-                gattCallback.asyncOperationCallbackFlow
-                    .mapNotNull { it as? ServicesDiscoveredCallback }
+                gattCallback.asyncOperationResponseFlow
+                    .mapNotNull { it as? ServicesDiscoveredResponse }
                     .collect { (services) ->
                         stateManager.handleEvent(Event.OnGattServicesDiscovered(services))
                     }
             }
             launch {
-                gattCallback.asyncOperationCallbackFlow
-                    .mapNotNull { it as? CharacteristicChangedCallback }
+                gattCallback.asyncOperationResponseFlow
+                    .mapNotNull { it as? CharacteristicChangedResponse }
                     .collect { (bluetoothGattCharacteristic) ->
                         val serviceUUID = bluetoothGattCharacteristic.service.uuid
                         val characteristicUUID = bluetoothGattCharacteristic.uuid
@@ -314,6 +288,28 @@ internal class Client(context: Context, parentJob: Job? = null) {
         }
     }
     //endregion
+
+    private fun BluetoothGattCharacteristic.ensureIdentity(service: UUID, characteristic: UUID) {
+        if (service != this.service.uuid || characteristic != uuid)
+            throw IllegalStateException(
+                "Received response for wrong characteristic. " +
+                        "(expects: service=$service characteristic=$characteristic " +
+                        "received: service=${this.service.uuid} characteristic=$uuid)"
+            )
+    }
+
+    private fun BluetoothGattDescriptor.ensureIdentity(
+        service: UUID,
+        characteristic: UUID,
+        descriptor: UUID
+    ) {
+        if (service != this.characteristic.service.uuid || characteristic != this.characteristic.uuid || descriptor != uuid)
+            throw IllegalStateException(
+                "Received response for wrong descriptor. " +
+                        "(expects: service=$service characteristic=$characteristic descriptor=$descriptor " +
+                        "received: service=${this.characteristic.service.uuid} characteristic=${this.characteristic.uuid} descriptor=$uuid)"
+            )
+    }
 
     /**
      * Returns the current state's gatt-client, or `null` if current-state

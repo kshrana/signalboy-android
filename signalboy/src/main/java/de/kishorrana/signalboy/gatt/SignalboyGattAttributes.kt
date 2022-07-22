@@ -17,6 +17,10 @@ internal object SignalboyGattAttributes {
         UUID.fromString("92360002-7858-41a5-b0cc-942dd4189715")
 
     val allServices = mapOf(
+        DEVICE_INFORMATION_SERVICE_UUID to listOf(
+            HARDWARE_REVISION_CHARACTERISTIC_UUID,
+            SOFTWARE_REVISION_CHARACTERISTIC_UUID,
+        ),
         OUTPUT_SERVICE_UUID to listOf(
             TARGET_TIMESTAMP_CHARACTERISTIC_UUID,
             TRIGGER_TIMER_CHARACTERISTIC_UUID,
@@ -26,6 +30,16 @@ internal object SignalboyGattAttributes {
             REFERENCE_TIMESTAMP_CHARACTERISTIC_UUID,
         )
     )
+}
+
+internal object HardwareRevisionCharacteristic : Client.Endpoint.Characteristic() {
+    override val serviceUUID = DEVICE_INFORMATION_SERVICE_UUID
+    override val characteristicUUID = HARDWARE_REVISION_CHARACTERISTIC_UUID
+}
+
+internal object SoftwareRevisionCharacteristic : Client.Endpoint.Characteristic() {
+    override val serviceUUID = DEVICE_INFORMATION_SERVICE_UUID
+    override val characteristicUUID = SOFTWARE_REVISION_CHARACTERISTIC_UUID
 }
 
 internal object TargetTimestampCharacteristic : Client.Endpoint.Characteristic() {
@@ -45,5 +59,6 @@ internal object TimeNeedsSyncCharacteristic : Client.Endpoint.Characteristic() {
 
 internal object ReferenceTimestampCharacteristic : Client.Endpoint.Characteristic() {
     override val serviceUUID = SignalboyGattAttributes.TIME_SYNC_SERVICE_UUID
-    override val characteristicUUID = SignalboyGattAttributes.REFERENCE_TIMESTAMP_CHARACTERISTIC_UUID
+    override val characteristicUUID =
+        SignalboyGattAttributes.REFERENCE_TIMESTAMP_CHARACTERISTIC_UUID
 }

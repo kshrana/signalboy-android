@@ -7,8 +7,8 @@ import android.content.Context
 import android.util.Log
 import com.tinder.StateMachine
 import de.kishorrana.signalboy.CONNECTION_ATTEMPT_TIMEOUT_IN_MILLIS
-import de.kishorrana.signalboy.GATT_STATUS_CONNECTION_TIMEOUT
-import de.kishorrana.signalboy.GATT_STATUS_SUCCESS
+import de.kishorrana.signalboy.gatt.GATT_STATUS_CONNECTION_TIMEOUT
+import de.kishorrana.signalboy.gatt.GATT_STATUS_SUCCESS
 import de.kishorrana.signalboy.MissingRequiredPermissionsException
 import de.kishorrana.signalboy.util.toHexString
 import kotlinx.coroutines.*

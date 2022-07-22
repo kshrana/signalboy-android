@@ -2,7 +2,7 @@ package de.kishorrana.signalboy.client
 
 import android.bluetooth.*
 import android.util.Log
-import de.kishorrana.signalboy.GATT_STATUS_SUCCESS
+import de.kishorrana.signalboy.gatt.GATT_STATUS_SUCCESS
 import de.kishorrana.signalboy.util.toHexString
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.channels.Channel
@@ -16,15 +16,15 @@ import kotlinx.coroutines.flow.shareIn
 private const val TAG = "ClientBtGattCallback"
 
 internal class ClientBluetoothGattCallback(scope: CoroutineScope) : BluetoothGattCallback() {
-    private val _connectionStateChangeCallbackChannel =
-        makeCallbackChannel<ConnectionStateChangeCallback>()
-    val connectionStateChangeCallbackFlow =
-        _connectionStateChangeCallbackChannel.receiveAsSharedFlow(scope)
+    private val _connectionStateChangeResponseChannel =
+        makeResponseChannel<ConnectionStateChangeResponse>()
+    val connectionStateChangeResponseFlow =
+        _connectionStateChangeResponseChannel.receiveAsSharedFlow(scope)
 
-    private val _asyncOperationCallbackChannel =
-        makeCallbackChannel<GattOperationCallback>()
-    val asyncOperationCallbackFlow =
-        _asyncOperationCallbackChannel.receiveAsSharedFlow(scope)
+    private val _asyncOperationResponseChannel =
+        makeResponseChannel<GattOperationResponse>()
+    val asyncOperationResponseFlow =
+        _asyncOperationResponseChannel.receiveAsSharedFlow(scope)
 
     override fun onConnectionStateChange(
         gatt: BluetoothGatt?,
@@ -38,8 +38,8 @@ internal class ClientBluetoothGattCallback(scope: CoroutineScope) : BluetoothGat
                     "gatt=$gatt status=${status.toByte().toHexString()} newState=$newState"
         )
 
-        _connectionStateChangeCallbackChannel.trySend(
-            ConnectionStateChangeCallback(
+        _connectionStateChangeResponseChannel.trySend(
+            ConnectionStateChangeResponse(
                 newState,
                 status
             )
@@ -60,8 +60,8 @@ internal class ClientBluetoothGattCallback(scope: CoroutineScope) : BluetoothGat
             Result.failure(ReceivedBadStatusCodeException(status))
         }
 
-        _asyncOperationCallbackChannel.trySend(
-            GattOperationCallback.ServicesDiscoveredCallback(
+        _asyncOperationResponseChannel.trySend(
+            GattOperationResponse.ServicesDiscoveredResponse(
                 result
             )
         )
@@ -76,11 +76,8 @@ internal class ClientBluetoothGattCallback(scope: CoroutineScope) : BluetoothGat
             if (status == GATT_STATUS_SUCCESS) Log::d else Log::w
         loggingHandler(TAG, "onDescriptorWrite() - status=${status.toByte().toHexString()}")
 
-        _asyncOperationCallbackChannel.trySend(
-            GattOperationCallback.DescriptorWriteCallback(
-                descriptor!!,
-                status
-            )
+        _asyncOperationResponseChannel.trySend(
+            GattOperationResponse.DescriptorWriteResponse(descriptor!!, status)
         )
     }
 
@@ -96,8 +93,8 @@ internal class ClientBluetoothGattCallback(scope: CoroutineScope) : BluetoothGat
                     "status=${status.toByte().toHexString()}"
         )
 
-        _asyncOperationCallbackChannel.trySend(
-            GattOperationCallback.CharacteristicReadCallback(
+        _asyncOperationResponseChannel.trySend(
+            GattOperationResponse.CharacteristicReadResponse(
                 characteristic!!,
                 status
             )
@@ -116,11 +113,8 @@ internal class ClientBluetoothGattCallback(scope: CoroutineScope) : BluetoothGat
                     "status=${status.toByte().toHexString()}"
         )
 
-        _asyncOperationCallbackChannel.trySend(
-            GattOperationCallback.CharacteristicWriteCallback(
-                characteristic!!,
-                status
-            )
+        _asyncOperationResponseChannel.trySend(
+            GattOperationResponse.CharacteristicWriteResponse(characteristic!!, status)
         )
     }
 
@@ -130,8 +124,8 @@ internal class ClientBluetoothGattCallback(scope: CoroutineScope) : BluetoothGat
     ) {
         Log.d(TAG, "onCharacteristicChanged() - characteristic=$characteristic")
 
-        _asyncOperationCallbackChannel.trySend(
-            GattOperationCallback.CharacteristicChangedCallback(characteristic!!)
+        _asyncOperationResponseChannel.trySend(
+            GattOperationResponse.CharacteristicChangedResponse(characteristic!!)
         )
     }
 
@@ -143,34 +137,34 @@ internal class ClientBluetoothGattCallback(scope: CoroutineScope) : BluetoothGat
     companion object {}    // Will be extended with helper-functions in outer-context.
 
     //region Supporting Types
-    data class ConnectionStateChangeCallback(
+    data class ConnectionStateChangeResponse(
         val newState: Int,
         val status: Int
     )
 
-    sealed class GattOperationCallback {
-        data class ServicesDiscoveredCallback(
+    sealed class GattOperationResponse {
+        data class ServicesDiscoveredResponse(
             val services: Result<List<BluetoothGattService>>
-        ) : GattOperationCallback()
+        ) : GattOperationResponse()
 
-        data class CharacteristicReadCallback(
+        data class CharacteristicReadResponse(
             val characteristic: BluetoothGattCharacteristic,
             val status: Int
-        ) : GattOperationCallback()
+        ) : GattOperationResponse()
 
-        data class CharacteristicWriteCallback(
+        data class CharacteristicWriteResponse(
             val characteristic: BluetoothGattCharacteristic,
             val status: Int
-        ) : GattOperationCallback()
+        ) : GattOperationResponse()
 
-        data class CharacteristicChangedCallback(
+        data class CharacteristicChangedResponse(
             val characteristic: BluetoothGattCharacteristic
-        ) : GattOperationCallback()
+        ) : GattOperationResponse()
 
-        data class DescriptorWriteCallback(
+        data class DescriptorWriteResponse(
             val descriptor: BluetoothGattDescriptor,
             val status: Int
-        ) : GattOperationCallback()
+        ) : GattOperationResponse()
     }
     //endregion
 
@@ -178,6 +172,6 @@ internal class ClientBluetoothGattCallback(scope: CoroutineScope) : BluetoothGat
 }
 
 //region Factory
-private fun <T> ClientBluetoothGattCallback.Companion.makeCallbackChannel(): Channel<T> =
+private fun <T> ClientBluetoothGattCallback.Companion.makeResponseChannel(): Channel<T> =
     Channel(CONFLATED)
 //endregion
