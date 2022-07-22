@@ -90,7 +90,7 @@ class SignalboyService internal constructor(
      */
     fun tryTriggerSync(): Boolean {
         try {
-            syncService.triggerSync()
+            syncService.debugTriggerSync()
         } catch (err: Throwable) {
             Log.e(TAG, "tryTriggerSync() - Failed to trigger sync due to error:", err)
             return false

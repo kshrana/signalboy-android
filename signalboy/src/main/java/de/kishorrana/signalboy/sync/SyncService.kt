@@ -40,8 +40,8 @@ internal class SyncService {
      * DEBUGGING.
      *
      */
-    fun triggerSync() {
-        stateManager.handleEvent(OnSyncRequired)
+    fun debugTriggerSync() {
+        stateManager.handleEvent(OnSyncRequest)
     }
 
     inner class StateManager {
