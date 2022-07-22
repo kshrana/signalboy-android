@@ -1,9 +1,14 @@
 package com.example.signalboycentral
 
 import android.Manifest
+import android.content.ComponentName
+import android.content.Context
+import android.content.Intent
+import android.content.ServiceConnection
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.os.IBinder
 import android.util.Log
 import android.view.Menu
 import android.view.MenuItem
@@ -19,7 +24,7 @@ import com.google.android.material.snackbar.Snackbar
 import de.kishorrana.signalboy.AlreadyConnectingException
 import de.kishorrana.signalboy.BluetoothDisabledException
 import de.kishorrana.signalboy.NoCompatiblePeripheralDiscovered
-import de.kishorrana.signalboy.Signalboy
+import de.kishorrana.signalboy.SignalboyFacade
 import de.kishorrana.signalboy.client.ConnectionTimeoutException
 import de.kishorrana.signalboy.client.NoConnectionAttemptsLeftException
 import de.kishorrana.signalboy.scanner.AlreadyScanningException
@@ -37,7 +42,28 @@ class MainActivity : AppCompatActivity(), ActivityCompat.OnRequestPermissionsRes
 
     private lateinit var binding: ActivityMainBinding
 
-    private val onStateUpdateListener = Signalboy.OnConnectionStateUpdateListener {
+    private var signalboyFacade: SignalboyFacade? = null
+    private val signalboyFacadeConnection: ServiceConnection = object : ServiceConnection {
+        override fun onServiceConnected(
+            componentName: ComponentName,
+            service: IBinder
+        ) {
+            signalboyFacade = (service as SignalboyFacade.LocalBinder).getService().apply {
+                setOnConnectionStateUpdateListener(onStateUpdateListener)
+            }
+
+            updateView()
+        }
+
+        override fun onServiceDisconnected(componentName: ComponentName) {
+            // This is called when the connection with the service has been
+            // unexpectedly disconnected -- that is, its process crashed.
+            Log.e(TAG, "onServiceDisconnected")
+            signalboyFacade = null
+        }
+    }
+
+    private val onStateUpdateListener = SignalboyFacade.OnConnectionStateUpdateListener {
         // Check for errors...
         (it as? State.Disconnected)?.cause?.let { err ->
             onConnectionError(err)
@@ -59,15 +85,17 @@ class MainActivity : AppCompatActivity(), ActivityCompat.OnRequestPermissionsRes
         setSupportActionBar(binding.toolbar)
 
         binding.fab.setOnClickListener { onFabClicked() }
-        binding.contentMain.buttonSync.setOnClickListener { Signalboy.tryTriggerSync() }
+        binding.contentMain.buttonSync.setOnClickListener { signalboyFacade!!.tryTriggerSync() }
         binding.contentMain.buttonTest.apply {
             setOnClickListener {
                 if (testing?.isActive == true) {
                     testing?.cancel()
                     text = getString(R.string.button_test_start)
                 } else {
-                    testing = lifecycleScope.launch { TestRunner().execute() }
-                    text = getString(R.string.button_test_stop)
+                    signalboyFacade?.let {
+                        testing = lifecycleScope.launch { TestRunner().execute(it) }
+                        text = getString(R.string.button_test_stop)
+                    }
                 }
             }
         }
@@ -78,14 +106,10 @@ class MainActivity : AppCompatActivity(), ActivityCompat.OnRequestPermissionsRes
         updateView()
     }
 
-    override fun onStart() {
-        super.onStart()
-        Signalboy.setOnConnectionStateUpdateListener(onStateUpdateListener)
-    }
-
     override fun onStop() {
         super.onStop()
-        Signalboy.unsetOnConnectionStateUpdateListener()
+
+        stopSignalboyFacade()
     }
 
     override fun onCreateOptionsMenu(menu: Menu): Boolean {
@@ -234,7 +258,7 @@ class MainActivity : AppCompatActivity(), ActivityCompat.OnRequestPermissionsRes
             )
         }
 
-        when (val connectionState = Signalboy.tryGetConnectionState()) {
+        when (val connectionState = signalboyFacade?.state) {
             is State.Disconnected -> {
                 binding.contentMain.textPrimary.text = "Disconnected"
                 binding.contentMain.textSecondary.text = "Cause: ${connectionState.cause}"
@@ -272,28 +296,20 @@ class MainActivity : AppCompatActivity(), ActivityCompat.OnRequestPermissionsRes
             binding.fab.icon = ContextCompat.getDrawable(this, resourceId)
         }
 
-        when (Signalboy.isStarted) {
-            false -> {
-                binding.fab.text = "Start"
-                setFabIconDrawable(R.drawable.round_play_arrow_black_24dp)
-            }
-            true -> {
-                binding.fab.text = "Stop"
-                setFabIconDrawable(R.drawable.round_stop_black_24dp)
-            }
+        if (signalboyFacade == null) {
+            binding.fab.text = "Start"
+            setFabIconDrawable(R.drawable.round_play_arrow_black_24dp)
+        } else {
+            binding.fab.text = "Stop"
+            setFabIconDrawable(R.drawable.round_stop_black_24dp)
         }
     }
 
     private fun onFabClicked() {
-        val deferred = {
-            updateView()
-        }
-
-        if (!Signalboy.isStarted) {
-            startSignalboy()
-            deferred()
+        if (signalboyFacade == null) {
+            startPermissionRequests()
         } else {
-            stopSignalboy(deferred)
+            stopSignalboyFacade()
         }
     }
 
@@ -393,18 +409,18 @@ class MainActivity : AppCompatActivity(), ActivityCompat.OnRequestPermissionsRes
     }
 
     private fun onPermissionsEnsured() {
-        val bluetoothAdapter = Signalboy.getDefaultAdapter(this)
+        val bluetoothAdapter = SignalboyFacade.getDefaultAdapter(this)
         try {
-            Signalboy.verifyPrerequisites(this, bluetoothAdapter)
+            SignalboyFacade.verifyPrerequisites(this, bluetoothAdapter)
         } catch (err: Throwable) {
             Log.e(TAG, "Prerequisites are not met. Error: $err")
             return
         }
 
-        Signalboy.start(this, bluetoothAdapter)
+        startSignalboyFacade()
     }
 
-    private fun startSignalboy() {
+    private fun startPermissionRequests() {
         pendingPermissionRequests.clear()
         pendingPermissionRequests.addAll(checkForPendingPermissions())
 
@@ -413,7 +429,22 @@ class MainActivity : AppCompatActivity(), ActivityCompat.OnRequestPermissionsRes
         requestNextPermission()
     }
 
-    private fun stopSignalboy(completion: (() -> Unit)? = null) {
-        Signalboy.stop(completion)
+    private fun startSignalboyFacade() {
+        Intent(this, SignalboyFacade::class.java)
+            .putExtra(SignalboyFacade.EXTRA_CONFIGURATION, SignalboyFacade.Configuration.Default)
+            .also { intent ->
+                val result =
+                    bindService(intent, signalboyFacadeConnection, Context.BIND_AUTO_CREATE)
+                Log.d(TAG, "result=$result")
+            }
+    }
+
+    private fun stopSignalboyFacade() {
+        if (signalboyFacade == null) return
+
+        signalboyFacade = null
+        unbindService(signalboyFacadeConnection)
+
+        updateView()
     }
 }

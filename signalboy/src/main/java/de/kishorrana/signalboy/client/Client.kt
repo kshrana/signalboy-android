@@ -53,7 +53,11 @@ internal class Client(context: Context, parentJob: Job? = null) {
     }
 
     fun destroy() {
-        scope.cancel("Parent Client-instance will be destroyed.")
+        try {
+            triggerDisconnect()
+        } finally {
+            scope.cancel("Parent Client-instance will be destroyed.")
+        }
     }
 
     suspend fun connectAsync(device: BluetoothDevice, retryCount: Int = 3) {
