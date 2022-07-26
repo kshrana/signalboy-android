@@ -181,26 +181,31 @@ class SignalboyFacade : LifecycleService() {
 
         @JvmStatic
         fun verifyPrerequisites(context: Context, bluetoothAdapter: BluetoothAdapter) {
-            val requiredPermissions = mutableListOf<String>()
+            val requiredRuntimePermissions = mutableListOf<String>()
             if (Build.VERSION.SDK_INT >= 31) {
-                requiredPermissions.addAll(
+                requiredRuntimePermissions.addAll(
                     listOf(
                         Manifest.permission.BLUETOOTH_SCAN,
-                        Manifest.permission.BLUETOOTH_CONNECT
+                        Manifest.permission.BLUETOOTH_CONNECT,
                     )
                 )
             } else {
-                requiredPermissions.add(Manifest.permission.ACCESS_FINE_LOCATION)
+                requiredRuntimePermissions.addAll(
+                    listOf(
+                        Manifest.permission.BLUETOOTH,
+                        Manifest.permission.BLUETOOTH_ADMIN,
+                        Manifest.permission.ACCESS_FINE_LOCATION,
+                    )
+                )
             }
 
-            for (permission in requiredPermissions) {
+            for (permission in requiredRuntimePermissions) {
                 if (ContextCompat.checkSelfPermission(
                         context,
                         permission
                     ) != PackageManager.PERMISSION_GRANTED
                 ) {
-                    Log.e(TAG, "Missing required permission: $permission")
-                    throw MissingRequiredPermissionsException(permission)
+                    throw MissingRequiredRuntimePermissionException(permission)
                 }
             }
 

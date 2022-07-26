@@ -9,7 +9,7 @@ import com.tinder.StateMachine
 import de.kishorrana.signalboy.CONNECTION_ATTEMPT_TIMEOUT_IN_MILLIS
 import de.kishorrana.signalboy.gatt.GATT_STATUS_CONNECTION_TIMEOUT
 import de.kishorrana.signalboy.gatt.GATT_STATUS_SUCCESS
-import de.kishorrana.signalboy.MissingRequiredPermissionsException
+import de.kishorrana.signalboy.MissingRequiredRuntimePermissionException
 import de.kishorrana.signalboy.util.toHexString
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -183,7 +183,7 @@ internal class StateManager(
             return Session(device, gatt)
 
         } catch (err: SecurityException) {
-            throw MissingRequiredPermissionsException(err)
+            throw MissingRequiredRuntimePermissionException(err)
         }
     }
 
@@ -220,7 +220,7 @@ internal class StateManager(
                 )
 
         } catch (err: SecurityException) {
-            throw MissingRequiredPermissionsException(err)
+            throw MissingRequiredRuntimePermissionException(err)
         }
     }
 

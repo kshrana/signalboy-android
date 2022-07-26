@@ -6,7 +6,7 @@ import android.bluetooth.le.*
 import android.os.ParcelUuid
 import android.util.Log
 import de.kishorrana.signalboy.BluetoothDisabledException
-import de.kishorrana.signalboy.MissingRequiredPermissionsException
+import de.kishorrana.signalboy.MissingRequiredRuntimePermissionException
 import kotlinx.coroutines.*
 import java.util.*
 
@@ -88,7 +88,7 @@ internal class Scanner(private val bluetoothAdapter: BluetoothAdapter) {
                     scanCallback
                 )
             } catch (err: SecurityException) {
-                throw MissingRequiredPermissionsException(err)
+                throw MissingRequiredRuntimePermissionException(err)
             }
         } else {
             Log.d(TAG, "startScanning: already scanning")
@@ -99,7 +99,7 @@ internal class Scanner(private val bluetoothAdapter: BluetoothAdapter) {
         try {
             bluetoothLeScanner?.stopScan(scanCallback)
         } catch (err: SecurityException) {
-            throw MissingRequiredPermissionsException(err)
+            throw MissingRequiredRuntimePermissionException(err)
         } catch (err: Throwable) {
             Log.e(TAG, "Failed to stop scan due to error: $err")
         } finally {

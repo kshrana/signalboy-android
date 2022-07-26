@@ -35,8 +35,17 @@ import kotlinx.coroutines.launch
 
 private const val TAG = "MainActivity"
 
-const val PERMISSION_REQUEST_BLUETOOTH_CONNECT = 0
-const val PERMISSION_REQUEST_LOCATION = 1
+private const val PERMISSION_REQUEST_BLUETOOTH = 0
+private const val PERMISSION_REQUEST_LOCATION = 1
+
+private val bluetoothRuntimePermissions = arrayOf(
+    Manifest.permission.BLUETOOTH_SCAN,
+    Manifest.permission.BLUETOOTH_CONNECT,
+)
+
+private val locationRuntimePermissions = arrayOf(
+    Manifest.permission.ACCESS_FINE_LOCATION,
+)
 
 class MainActivity : AppCompatActivity(), ActivityCompat.OnRequestPermissionsResultCallback {
 
@@ -156,7 +165,7 @@ class MainActivity : AppCompatActivity(), ActivityCompat.OnRequestPermissionsRes
                 }
             }
 
-            PERMISSION_REQUEST_BLUETOOTH_CONNECT -> {
+            PERMISSION_REQUEST_BLUETOOTH -> {
                 // Request for bluetooth permission.
                 if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
                     // Permission has been granted.
@@ -320,24 +329,25 @@ class MainActivity : AppCompatActivity(), ActivityCompat.OnRequestPermissionsRes
      */
     private fun requestBluetoothPermission() {
         // Request the permission. The result will be received in onRequestPermissionResult().
-        fun requestPermission() = ActivityCompat.requestPermissions(
+        fun requestRuntimePermissions() = ActivityCompat.requestPermissions(
             this,
-            arrayOf(Manifest.permission.BLUETOOTH_CONNECT),
-            PERMISSION_REQUEST_BLUETOOTH_CONNECT
+            bluetoothRuntimePermissions,
+            PERMISSION_REQUEST_BLUETOOTH
         )
 
+        val shouldShowRequestPermissionRationale =
+            bluetoothRuntimePermissions.any { runtimePermission ->
+                ActivityCompat.shouldShowRequestPermissionRationale(this, runtimePermission)
+            }
+
         // Permission has not been granted and must be requested.
-        if (ActivityCompat.shouldShowRequestPermissionRationale(
-                this,
-                Manifest.permission.BLUETOOTH_CONNECT
-            )
-        ) {
+        if (shouldShowRequestPermissionRationale) {
             // Provide an additional rationale to the user if the permission was not granted
             // and the user would benefit from additional context for the use of the permission.
             // Display a SnackBar with a button to request the missing permission.
             Snackbar.make(binding.root, "bluetooth_access_required", Snackbar.LENGTH_INDEFINITE)
                 .setAction("Request Permission") {
-                    requestPermission()
+                    requestRuntimePermissions()
                 }
                 .show()
 
@@ -345,7 +355,7 @@ class MainActivity : AppCompatActivity(), ActivityCompat.OnRequestPermissionsRes
             Snackbar.make(binding.root, "bluetooth_permission_not_available", Snackbar.LENGTH_SHORT)
                 .show()
 
-            requestPermission()
+            requestRuntimePermissions()
         }
     }
 
@@ -353,15 +363,16 @@ class MainActivity : AppCompatActivity(), ActivityCompat.OnRequestPermissionsRes
         // Request the permission. The result will be received in onRequestPermissionResult().
         fun requestPermission() = ActivityCompat.requestPermissions(
             this,
-            arrayOf(Manifest.permission.ACCESS_FINE_LOCATION),
+            locationRuntimePermissions,
             PERMISSION_REQUEST_LOCATION
         )
 
-        if (ActivityCompat.shouldShowRequestPermissionRationale(
-                this,
-                Manifest.permission.ACCESS_FINE_LOCATION
-            )
-        ) {
+        val shouldShowRequestPermissionRationale =
+            locationRuntimePermissions.any { runtimePermission ->
+                ActivityCompat.shouldShowRequestPermissionRationale(this, runtimePermission)
+            }
+
+        if (shouldShowRequestPermissionRationale) {
             val alertDialogBuilder = AlertDialog.Builder(this)
             with(alertDialogBuilder) {
                 setTitle("loc_req_title")
@@ -374,25 +385,29 @@ class MainActivity : AppCompatActivity(), ActivityCompat.OnRequestPermissionsRes
         }
     }
 
-    private fun checkForPendingPermissions(): List<Int> {
-        val pendingPermissions = mutableListOf<Int>()
+    private fun checkForPendingRuntimePermissions(): List<Int> {
+        val pendingRuntimePermissions = mutableListOf<Int>()
         if (Build.VERSION.SDK_INT >= 31) {
-            if (ActivityCompat.checkSelfPermission(
-                    this,
-                    Manifest.permission.BLUETOOTH_CONNECT
-                ) != PackageManager.PERMISSION_GRANTED
-            )
-                pendingPermissions.add(PERMISSION_REQUEST_BLUETOOTH_CONNECT)
+            if (bluetoothRuntimePermissions.any { permission ->
+                    ActivityCompat.checkSelfPermission(
+                        this,
+                        permission
+                    ) != PackageManager.PERMISSION_GRANTED
+                }) {
+                pendingRuntimePermissions.add(PERMISSION_REQUEST_BLUETOOTH)
+            }
         } else {
-            if (ActivityCompat.checkSelfPermission(
-                    this,
-                    Manifest.permission.ACCESS_FINE_LOCATION
-                ) != PackageManager.PERMISSION_GRANTED
-            )
-                pendingPermissions.add(PERMISSION_REQUEST_LOCATION)
+            if (locationRuntimePermissions.any { permission ->
+                    ActivityCompat.checkSelfPermission(
+                        this,
+                        permission
+                    ) != PackageManager.PERMISSION_GRANTED
+                }) {
+                pendingRuntimePermissions.add(PERMISSION_REQUEST_LOCATION)
+            }
         }
 
-        return pendingPermissions
+        return pendingRuntimePermissions
     }
 
     private fun requestNextPermission() {
@@ -402,7 +417,7 @@ class MainActivity : AppCompatActivity(), ActivityCompat.OnRequestPermissionsRes
         }
 
         when (val pendingPermissionRequest = pendingPermissionRequests[0]) {
-            PERMISSION_REQUEST_BLUETOOTH_CONNECT -> requestBluetoothPermission()
+            PERMISSION_REQUEST_BLUETOOTH -> requestBluetoothPermission()
             PERMISSION_REQUEST_LOCATION -> requestLocationPermission()
             else -> throw IllegalArgumentException("$pendingPermissionRequest is Unknown")
         }
@@ -422,7 +437,7 @@ class MainActivity : AppCompatActivity(), ActivityCompat.OnRequestPermissionsRes
 
     private fun startPermissionRequests() {
         pendingPermissionRequests.clear()
-        pendingPermissionRequests.addAll(checkForPendingPermissions())
+        pendingPermissionRequests.addAll(checkForPendingRuntimePermissions())
 
         // Starts the permission request flow that is followed by Signalboy
         // connecting to the peripheral.

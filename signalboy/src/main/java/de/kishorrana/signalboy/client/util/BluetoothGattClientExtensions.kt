@@ -3,7 +3,7 @@ package de.kishorrana.signalboy.client.util
 import android.bluetooth.BluetoothGatt
 import android.bluetooth.BluetoothGattCharacteristic
 import android.bluetooth.BluetoothGattDescriptor
-import de.kishorrana.signalboy.MissingRequiredPermissionsException
+import de.kishorrana.signalboy.MissingRequiredRuntimePermissionException
 import de.kishorrana.signalboy.client.CharacteristicNotFoundException
 import de.kishorrana.signalboy.client.DescriptorNotFoundException
 import de.kishorrana.signalboy.client.FailedToStartAsyncOperationException
@@ -87,7 +87,7 @@ private fun BluetoothGatt.readCharacteristicOrThrow(
     val isStartAsyncOperationSuccess = try {
         readCharacteristic(characteristic)
     } catch (err: SecurityException) {
-        throw MissingRequiredPermissionsException(err)
+        throw MissingRequiredRuntimePermissionException(err)
     }
 
     if (!isStartAsyncOperationSuccess)
@@ -100,7 +100,7 @@ private fun BluetoothGatt.writeCharacteristicOrThrow(
     val isStartAsyncOperationSuccess = try {
         writeCharacteristic(characteristic)
     } catch (err: SecurityException) {
-        throw MissingRequiredPermissionsException(err)
+        throw MissingRequiredRuntimePermissionException(err)
     }
 
     if (!isStartAsyncOperationSuccess)
@@ -127,7 +127,7 @@ private fun BluetoothGatt.writeDescriptorOrThrow(
     val isStartAsyncOperationSuccess = try {
         writeDescriptor(descriptor)
     } catch (err: SecurityException) {
-        throw MissingRequiredPermissionsException(err)
+        throw MissingRequiredRuntimePermissionException(err)
     }
 
     if (!isStartAsyncOperationSuccess)
@@ -141,7 +141,7 @@ private fun BluetoothGatt.setCharacteristicNotificationOrThrow(
     val isSuccess = try {
         setCharacteristicNotification(characteristic, enable)
     } catch (err: SecurityException) {
-        throw MissingRequiredPermissionsException(err)
+        throw MissingRequiredRuntimePermissionException(err)
     }
 
     if (!isSuccess)

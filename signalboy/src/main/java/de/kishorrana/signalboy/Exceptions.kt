@@ -1,6 +1,6 @@
 package de.kishorrana.signalboy
 
-class MissingRequiredPermissionsException(
+class MissingRequiredRuntimePermissionException(
     val permission: String? = null,
     cause: Throwable? = null
 ) : Exception(cause) {
