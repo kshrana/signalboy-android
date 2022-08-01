@@ -1,6 +1,6 @@
 package com.example.signalboycentral
 
-import de.kishorrana.signalboy.SignalboyFacade
+import de.kishorrana.signalboy_android.SignalboyFacade
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 

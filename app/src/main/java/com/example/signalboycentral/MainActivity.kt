@@ -21,15 +21,15 @@ import androidx.lifecycle.lifecycleScope
 import com.example.signalboycentral.databinding.ActivityMainBinding
 import com.google.android.material.shape.ShapeAppearanceModel
 import com.google.android.material.snackbar.Snackbar
-import de.kishorrana.signalboy.AlreadyConnectingException
-import de.kishorrana.signalboy.BluetoothDisabledException
-import de.kishorrana.signalboy.NoCompatiblePeripheralDiscovered
-import de.kishorrana.signalboy.SignalboyFacade
-import de.kishorrana.signalboy.client.ConnectionTimeoutException
-import de.kishorrana.signalboy.client.NoConnectionAttemptsLeftException
-import de.kishorrana.signalboy.scanner.AlreadyScanningException
-import de.kishorrana.signalboy.scanner.BluetoothLeScanFailed
-import de.kishorrana.signalboy.signalboyservice.SignalboyService.State
+import de.kishorrana.signalboy_android.AlreadyConnectingException
+import de.kishorrana.signalboy_android.BluetoothDisabledException
+import de.kishorrana.signalboy_android.NoCompatiblePeripheralDiscovered
+import de.kishorrana.signalboy_android.SignalboyFacade
+import de.kishorrana.signalboy_android.client.ConnectionTimeoutException
+import de.kishorrana.signalboy_android.client.NoConnectionAttemptsLeftException
+import de.kishorrana.signalboy_android.scanner.AlreadyScanningException
+import de.kishorrana.signalboy_android.scanner.BluetoothLeScanFailed
+import de.kishorrana.signalboy_android.signalboyservice.SignalboyService.State
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
