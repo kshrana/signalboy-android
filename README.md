@@ -5,6 +5,12 @@ Some key features are:
 * Auto-connection handling
 * Clock-synchronization training (handled automatically by the service)
 
+## Installation
+The latest release is provided as a local Maven repository. Download it from [Releases](https://github.com/kshrana/signalboy-android/releases/latest) and extract the contents to a location accessible as a Maven local repository (e.g. `~/.m2/repository/`). Finally declare the dependency in your `build.gradle`:
+```groovy
+implementation 'de.kishorrana:signalboy_android:1.0.0'  // Make sure to reference the latest release.
+```
+
 ## Usage
 For your convenience `SignalboyFacade` (implemented as an
 [Android Bound-Service](https://developer.android.com/guide/components/bound-services))
@@ -50,3 +56,14 @@ system will have to subtract the specified Normalization-Delay from the timestam
 electronic TTL-events.
 
 **Customization**: S. `SignalboyFacade.Configuration`'s property `normalizationDelay`.
+
+## Releasing
+1. Bump the library version variable `libraryVersion` of the library's [build.gradle](./signalboy_android/build.gradle) file.
+2. Build the release using `./gradlew :signalboy_android:generateRepo` which performs the following:
+  * Builds the library .aar (`release`-configuration)
+  * Publishes the produced .aar to a local Maven repository (located at `signalboy_android/builds/repo`)
+  * Produces a zip containing the contents of the local Maven repository (located at `signalboy_android/builds/distributions/signalboy_android-maven.zip`)
+
+```bash
+./gradlew :signalboy_android:generateRepo
+```
