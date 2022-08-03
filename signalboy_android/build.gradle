@@ -5,7 +5,7 @@ plugins {
     id 'maven-publish'
 }
 
-def libraryVersion = '0.1.0'
+def libraryVersion = '1.0.0'
 
 android {
     namespace = 'de.kishorrana.signalboy_android'
