@@ -1,8 +1,8 @@
 package de.kishorrana.signalboy_android.sync
 
-class AlreadyTrainingException : Exception()
+class AlreadyTrainingException : kotlin.IllegalStateException()
 
-class TrainingTimeoutException : Exception()
+class NoTrainingAttemptsLeftException : kotlin.IllegalStateException()
 
 class IllegalStateException internal constructor(state: State) :
     kotlin.IllegalStateException(

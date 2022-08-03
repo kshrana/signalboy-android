@@ -86,7 +86,29 @@ internal class SyncService {
                 }
                 on<OnSyncRequired> { throw AlreadyTrainingException() }
                 on<OnSyncRequest> { throw AlreadyTrainingException() }
-                on<OnTrainingTimeout> { throw TrainingTimeoutException() }
+                on<OnTrainingTimeout> {
+                    val delayMillis = 1 * 1_000L
+                    val isAnyAttemptLeft = (attempt + 1 <= 3).also {
+                        Log.v(TAG, "Training attempt failed (attempt=$attempt).")
+                    }
+                    if (isAnyAttemptLeft) {
+                        Log.v(
+                            TAG,
+                            "Will launch next training attempt in ${delayMillis / 1_000}s..."
+                        )
+                        scheduleNextTrainingAttempt(delayMillis)
+
+                        // Transition is triggered later (when `delayMillis` passed).
+                        dontTransition()
+                    } else {
+                        Log.v(TAG, "No training attempts left.")
+                        throw NoTrainingAttemptsLeftException()
+                    }
+                }
+                on<OnTrainingRetry> {
+                    startSync()
+                    transitionTo(Training(scope, client, timeNeedsSyncSubscription, attempt + 1))
+                }
                 on<OnSyncSatisfy> { transitionTo(Synced(scope, client, timeNeedsSyncSubscription)) }
             }
             state<Synced> {
@@ -126,7 +148,7 @@ internal class SyncService {
             launch {
                 val initialValue = client.readGattCharacteristicAsync(TimeNeedsSyncCharacteristic)
 
-                // Subscribe
+                // Subscribe to characteristic
                 val subscription =
                     client.startNotifyAsync(TimeNeedsSyncCharacteristic) { (newValue) ->
                         handleTimeNeedsSyncCharacteristicNotification(newValue)
@@ -224,6 +246,13 @@ internal class SyncService {
             )
 
             return actualFiretime
+        }
+
+        private fun Training.scheduleNextTrainingAttempt(delayMillis: Long) {
+            scope.launch {
+                delay(delayMillis)
+                stateMachine.transition(OnTrainingRetry)
+            }
         }
 
         //region Helpers

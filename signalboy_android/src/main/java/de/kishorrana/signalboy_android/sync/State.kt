@@ -15,7 +15,11 @@ internal sealed class State {
     data class Training(
         override val scope: CoroutineScope,
         override val client: Client,
-        override val timeNeedsSyncSubscription: Client.NotificationSubscription.CancellationToken
+        override val timeNeedsSyncSubscription: Client.NotificationSubscription.CancellationToken,
+        /**
+         * Training attempt.
+         */
+        val attempt: Int = 1
     ) : State(), Attached
 
     data class Synced(
@@ -51,6 +55,7 @@ internal sealed class Event {
     object OnSyncSatisfy : Event()
 
     object OnTrainingTimeout : Event()
+    object OnTrainingRetry : Event()
 
     // debug for testing sync (manual trigger)
     object OnSyncRequest : Event()
