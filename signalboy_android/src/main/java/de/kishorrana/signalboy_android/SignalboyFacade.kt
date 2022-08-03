@@ -233,7 +233,7 @@ class SignalboyFacade : LifecycleService() {
     ) : Parcelable {
         companion object {
             @JvmStatic
-            val Default: Configuration by lazy { Configuration(normalizationDelay = 300L) }
+            val Default: Configuration by lazy { Configuration(normalizationDelay = 100L) }
         }
     }
 
