@@ -354,6 +354,8 @@ internal class Client(context: Context, parentJob: Job? = null) {
                     block()
                 }
             }
+        } catch (err: TimeoutCancellationException) {
+            throw IllegalStateException("Execution of BluetoothGatt-operation timed out.")
         } finally {
             semaphore.tryReceive()
         }
