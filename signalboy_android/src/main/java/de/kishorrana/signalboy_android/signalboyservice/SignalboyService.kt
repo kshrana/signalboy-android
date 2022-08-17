@@ -6,15 +6,13 @@ import android.util.Log
 import de.kishorrana.signalboy_android.*
 import de.kishorrana.signalboy_android.client.Client
 import de.kishorrana.signalboy_android.client.endpoint.readGattCharacteristicAsync
+import de.kishorrana.signalboy_android.client.endpoint.startNotifyAsync
 import de.kishorrana.signalboy_android.client.endpoint.writeGattCharacteristicAsync
 import de.kishorrana.signalboy_android.client.util.hasAllSignalboyGattAttributes
 import de.kishorrana.signalboy_android.gatt.*
-import de.kishorrana.signalboy_android.gatt.HardwareRevisionCharacteristic
-import de.kishorrana.signalboy_android.gatt.SignalboyGattAttributes
-import de.kishorrana.signalboy_android.gatt.SoftwareRevisionCharacteristic
-import de.kishorrana.signalboy_android.gatt.TargetTimestampCharacteristic
 import de.kishorrana.signalboy_android.scanner.Scanner
 import de.kishorrana.signalboy_android.sync.SyncService
+import de.kishorrana.signalboy_android.util.fromByteArrayLE
 import de.kishorrana.signalboy_android.util.now
 import de.kishorrana.signalboy_android.util.toByteArrayLE
 import kotlinx.coroutines.*
@@ -73,9 +71,14 @@ class SignalboyService internal constructor(
         MutableStateFlow<State>(State.Disconnected())
     val latestState = _latestState.asStateFlow()
 
+    /// Key: Address of Peripheral that requested connection-reject
+    private val rejectRequests = mutableMapOf<String, RejectRequest>()
+
     // Will be `true`, if establishing a connection has succeeded.
     private var connecting: Deferred<SignalboyDeviceInformation>? = null
     private var clientStateObserving: Job? = null
+    private var connectionOptionsSubscription:
+            Client.NotificationSubscription.CancellationToken? = null
 
     private var syncServiceCoroutineContext: CoroutineContext? = null
     private var syncServiceRestarting: Job? = null
@@ -127,7 +130,17 @@ class SignalboyService internal constructor(
                 _latestState.value = State.Connecting
 
                 // Try to discover Peripheral.
+                //
+                // Filter Peripherals that have active requests for
+                // Connection-Rejection.
+                val rejectRequestAddresses = rejectRequests
+                    .filter { (_, rejectRequest) -> rejectRequest.isValid() }
+                    .map { (address, _) -> address }
+                Log.d(TAG, "rejectRequests=$rejectRequests")
+                Log.d(TAG, "rejectRequestAddresses=$rejectRequestAddresses")
+
                 val devices = Scanner(bluetoothAdapter).discoverPeripherals(
+                    rejectRequestAddresses,
                     SignalboyGattAttributes.OUTPUT_SERVICE_UUID,
                     SCAN_PERIOD_IN_MILLIS,
                     true
@@ -177,6 +190,10 @@ class SignalboyService internal constructor(
                 Log.i(TAG, "Successfully connected to peripheral.")
 
                 startSyncService()
+
+                connectionOptionsSubscription?.cancel()
+                connectionOptionsSubscription = setupConnectionOptionsSubscription()
+
                 return@async deviceInformation
             } catch (err: Throwable) {
                 val publicDisconnectCause = when (err) {
@@ -217,6 +234,7 @@ class SignalboyService internal constructor(
 
     private suspend fun disconnectFromPeripheralAsync(disconnectCause: Throwable?) {
         try {
+            connectionOptionsSubscription?.cancel()
             clientStateObserving?.cancelAndJoin()
             connecting?.cancelAndJoin()
             stopSyncService()
@@ -296,6 +314,39 @@ class SignalboyService internal constructor(
         syncService.attach(context, client)
     }
 
+    private fun handleConnectionOptionsCharacteristic(value: ByteArray) {
+        val connectionOptionsRawValue = Int.fromByteArrayLE(value).also {
+            Log.v(TAG, "handleConnectionOptionsCharacteristic() - connectionOptions=$it")
+        }
+        val connectionOptions = SignalboyConnectionOptions(connectionOptionsRawValue)
+
+        if (connectionOptions.hasRejectRequest) {
+            if (client.state is ClientState.Connected) {
+                val address =
+                    (client.state as de.kishorrana.signalboy_android.client.State.Connected)
+                        .session.device.address
+                rejectRequests[address] = RejectRequest(address, now())
+
+                scope.launch { disconnectFromPeripheralAsync(ConnectionRejectedException()) }
+            } else {
+                throw IllegalStateException(
+                    "Received updated value for notification subscription, but client " +
+                            "is not connected."
+                )
+            }
+        }
+    }
+
+    /**
+     * Subscribes for updates to the "ConnectionOptions"-Characteristic.
+     *
+     */
+    private suspend fun setupConnectionOptionsSubscription():
+            Client.NotificationSubscription.CancellationToken =
+        client.startNotifyAsync(ConnectionOptionsCharacteristic) { (newValue) ->
+            handleConnectionOptionsCharacteristic(newValue)
+        }
+
     private fun startSyncService() {
         scope.launchSyncService(client)
     }
@@ -305,6 +356,10 @@ class SignalboyService internal constructor(
         syncServiceCoroutineContext?.cancel()
         syncServiceRestarting?.cancel()
     }
+
+    /// Returns `true`, if the request is valid (i.e. has not expired).
+    private fun RejectRequest.isValid() =
+        now() - receivedTime < REJECT_CONNECTION_DURATION_IN_MILLIS
     //endregion
 
     //region Factory

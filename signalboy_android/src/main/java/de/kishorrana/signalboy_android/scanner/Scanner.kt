@@ -30,6 +30,8 @@ internal class Scanner(private val bluetoothAdapter: BluetoothAdapter) {
     /**
      * Discover peripherals, optionally using a filter.
      *
+     * @param addressFilter Peripherals with the given MAC-addresses will be filtered form the
+     * results.
      * @param serviceUUIDFilter if specified, only Peripherals advertising a service with the
      * specified UUID will be returned in the results.
      * @param scanTimeout the scan will timeout after the specified timeout (in milliseconds).
@@ -39,6 +41,7 @@ internal class Scanner(private val bluetoothAdapter: BluetoothAdapter) {
      * @return a list consisting of the discovered peripherals.
      */
     suspend fun discoverPeripherals(
+        addressFilter: List<String>,
         serviceUUIDFilter: UUID?,
         scanTimeout: Long,
         shouldCancelAfterFirstMatch: Boolean = false
@@ -48,7 +51,11 @@ internal class Scanner(private val bluetoothAdapter: BluetoothAdapter) {
         withContext(Dispatchers.IO) {
             Log.v(TAG, "discoverPeripherals: I'm working in thread ${Thread.currentThread().name}")
 
-            startScan(serviceUUIDFilter?.let(::ParcelUuid), shouldCancelAfterFirstMatch)
+            startScan(
+                addressFilter,
+                serviceUUIDFilter?.let(::ParcelUuid),
+                shouldCancelAfterFirstMatch
+            )
             scanTimeoutJob = launch {
                 Log.d(TAG, "Waiting for scan to complete...")
                 delay(scanTimeout)
@@ -70,7 +77,11 @@ internal class Scanner(private val bluetoothAdapter: BluetoothAdapter) {
         }
     }
 
-    private fun startScan(serviceUUID: ParcelUuid?, shouldCancelAfterFirstMatch: Boolean) {
+    private fun startScan(
+        addressFilter: List<String>,
+        serviceUUID: ParcelUuid?,
+        shouldCancelAfterFirstMatch: Boolean
+    ) {
         if (scanCallback == null) {
             // Reset
             scanResults.clear()
@@ -81,7 +92,7 @@ internal class Scanner(private val bluetoothAdapter: BluetoothAdapter) {
                 bluetoothLeScanner = bluetoothAdapter.bluetoothLeScanner
 
                 Log.d(TAG, "Start Scanning")
-                scanCallback = DeviceScanCallback(shouldCancelAfterFirstMatch)
+                scanCallback = DeviceScanCallback(addressFilter, shouldCancelAfterFirstMatch)
                 bluetoothLeScanner?.startScan(
                     buildScanFilters(serviceUUID),
                     scanSettings,
@@ -131,15 +142,24 @@ internal class Scanner(private val bluetoothAdapter: BluetoothAdapter) {
     /**
      * Custom ScanCallback object - adds found devices to list on success, displays error on failure.
      */
-    private inner class DeviceScanCallback(val shouldCancelAfterFirstMatch: Boolean) :
-        ScanCallback() {
+    private inner class DeviceScanCallback(
+        val addressFilter: List<String>,
+        val shouldCancelAfterFirstMatch: Boolean
+    ) : ScanCallback() {
         override fun onBatchScanResults(results: List<ScanResult>) {
             super.onBatchScanResults(results)
 
-            Log.d(TAG, "on -> batchScanResults: results: $results")
+            Log.v(TAG, "on -> batchScanResults: results=$results addressFilter=$addressFilter")
             for (item in results) {
                 item.device?.let { device ->
-                    scanResults[device.address] = device
+                    if (!addressFilter.contains(device.address)) {
+                        scanResults[device.address] = device
+                    } else {
+                        Log.v(
+                            TAG, "Discarding scan-result (address=${device.address} " +
+                                    "is blacklisted)."
+                        )
+                    }
                 }
             }
 
@@ -154,9 +174,16 @@ internal class Scanner(private val bluetoothAdapter: BluetoothAdapter) {
         ) {
             super.onScanResult(callbackType, result)
 
-            Log.d(TAG, "on -> scanResult: result: $result")
+            Log.v(TAG, "on -> scanResult: result: $result addressFilter=$addressFilter")
             result.device?.let { device ->
-                scanResults[device.address] = device
+                if (!addressFilter.contains(device.address)) {
+                    scanResults[device.address] = device
+                } else {
+                    Log.v(
+                        TAG, "Discarding scan-result (address=${device.address} " +
+                                "is blacklisted)."
+                    )
+                }
             }
 
             if (shouldCancelAfterFirstMatch && scanResults.isNotEmpty()) {

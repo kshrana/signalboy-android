@@ -173,7 +173,7 @@ internal class SyncService {
 
         private fun handleTimeNeedsSyncCharacteristicNotification(value: ByteArray) {
             val timeNeedsSync = Boolean.fromByteArrayLE(value).also {
-                Log.d(TAG, "handleTimeNeedsSyncCharacteristic() - timeNeedsSync=$it")
+                Log.v(TAG, "handleTimeNeedsSyncCharacteristic() - timeNeedsSync=$it")
             }
 
             val event = when (timeNeedsSync) {

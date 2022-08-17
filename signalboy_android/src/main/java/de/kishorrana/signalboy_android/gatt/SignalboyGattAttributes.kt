@@ -16,6 +16,11 @@ internal object SignalboyGattAttributes {
     val REFERENCE_TIMESTAMP_CHARACTERISTIC_UUID: UUID =
         UUID.fromString("92360002-7858-41a5-b0cc-942dd4189715")
 
+    val CONNECTION_INFORMATION_SERVICE_UUID: UUID =
+        UUID.fromString("a5210000-9859-499a-ad8a-1264b41a7750")
+    val CONNECTION_OPTIONS_CHARACTERISTIC_UUID: UUID =
+        UUID.fromString("a5210001-9859-499a-ad8a-1264b41a7750")
+
     val allServices = mapOf(
         DEVICE_INFORMATION_SERVICE_UUID to listOf(
             HARDWARE_REVISION_CHARACTERISTIC_UUID,
@@ -28,6 +33,9 @@ internal object SignalboyGattAttributes {
         TIME_SYNC_SERVICE_UUID to listOf(
             TIME_NEEDS_SYNC_CHARACTERISTIC_UUID,
             REFERENCE_TIMESTAMP_CHARACTERISTIC_UUID,
+        ),
+        CONNECTION_INFORMATION_SERVICE_UUID to listOf(
+            CONNECTION_OPTIONS_CHARACTERISTIC_UUID,
         )
     )
 }
@@ -61,4 +69,10 @@ internal object ReferenceTimestampCharacteristic : Client.Endpoint.Characteristi
     override val serviceUUID = SignalboyGattAttributes.TIME_SYNC_SERVICE_UUID
     override val characteristicUUID =
         SignalboyGattAttributes.REFERENCE_TIMESTAMP_CHARACTERISTIC_UUID
+}
+
+internal object ConnectionOptionsCharacteristic : Client.Endpoint.Characteristic() {
+    override val serviceUUID = SignalboyGattAttributes.CONNECTION_INFORMATION_SERVICE_UUID
+    override val characteristicUUID =
+        SignalboyGattAttributes.CONNECTION_OPTIONS_CHARACTERISTIC_UUID
 }

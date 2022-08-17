@@ -9,8 +9,11 @@ class MissingRequiredRuntimePermissionException(
 
 class BluetoothDisabledException : Exception("Expects Bluetooth to be enabled.")
 
-class NoCompatiblePeripheralDiscovered(message: String?): Exception(message)
+class NoCompatiblePeripheralDiscovered(message: String?) : Exception(message)
 
 class AlreadyConnectingException : IllegalStateException("Already connecting…")
 
 class GattClientIsMissingAttributesException : IllegalStateException()
+
+/// Thrown when Peripheral indicated a Connection Reject Request.
+class ConnectionRejectedException : RuntimeException()
