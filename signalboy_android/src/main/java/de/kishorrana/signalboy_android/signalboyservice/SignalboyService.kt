@@ -18,6 +18,7 @@ import de.kishorrana.signalboy_android.util.toByteArrayLE
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import java.nio.charset.StandardCharsets
+import java.util.*
 import kotlin.coroutines.CoroutineContext
 import de.kishorrana.signalboy_android.client.State as ClientState
 import de.kishorrana.signalboy_android.sync.State as SyncState
@@ -323,7 +324,7 @@ class SignalboyService internal constructor(
                 val address =
                     (client.state as de.kishorrana.signalboy_android.client.State.Connected)
                         .session.device.address
-                rejectRequests[address] = RejectRequest(address, now())
+                rejectRequests[address] = RejectRequest(address, Date())
 
                 scope.launch { disconnectFromPeripheralAsync(ConnectionRejectedException()) }
             } else {
@@ -357,7 +358,7 @@ class SignalboyService internal constructor(
 
     /// Returns `true`, if the request is valid (i.e. has not expired).
     private fun RejectRequest.isValid() =
-        now() - receivedTime < REJECT_CONNECTION_DURATION_IN_MILLIS
+        Date().time - receivedTime.time < REJECT_CONNECTION_DURATION_IN_MILLIS
     //endregion
 
     //region Factory
