@@ -61,8 +61,8 @@ electronic TTL-events.
 1. Bump the library version variable `libraryVersion` of the library's [build.gradle](./signalboy_android/build.gradle) file.
 2. Build the release using `./gradlew :signalboy_android:generateRepo` which performs the following:
   * Builds the library .aar (`release`-configuration)
-  * Publishes the produced .aar to a local Maven repository (located at `signalboy_android/builds/repo`)
-  * Produces a zip containing the contents of the local Maven repository (located at `signalboy_android/builds/distributions/signalboy_android-maven.zip`)
+  * Publishes the produced .aar to a local Maven repository (located at `signalboy_android/build/repo`)
+  * Produces a zip containing the contents of the local Maven repository (located at `signalboy_android/build/distributions/signalboy_android-maven.zip`)
 
 ```bash
 ./gradlew :signalboy_android:generateRepo
