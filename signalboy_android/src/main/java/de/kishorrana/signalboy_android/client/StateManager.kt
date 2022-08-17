@@ -175,11 +175,7 @@ internal class StateManager(
 
     private fun connect(device: BluetoothDevice): Session {
         try {
-            val gatt = device.connectGatt(
-                context,
-                false,
-                bluetoothGattCallback
-            )
+            val gatt = device.connectGatt(context, false, bluetoothGattCallback)
             return Session(device, gatt)
 
         } catch (err: SecurityException) {

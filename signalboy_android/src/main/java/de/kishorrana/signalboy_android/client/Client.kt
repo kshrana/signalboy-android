@@ -17,6 +17,7 @@ import de.kishorrana.signalboy_android.client.util.writeDescriptor
 import de.kishorrana.signalboy_android.gatt.CLIENT_CONFIGURATION_DESCRIPTOR_UUID
 import de.kishorrana.signalboy_android.gatt.GATT_STATUS_SUCCESS
 import kotlinx.coroutines.*
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.*
 import java.util.*
 
@@ -43,6 +44,15 @@ internal class Client(context: Context, parentJob: Job? = null) {
     private val gattCallback = ClientBluetoothGattCallback(scope)
     private val stateManager = StateManager(context, gattCallback, scope)
 
+    /**
+     * Channel is empty while no async-operation for BluetoothGatt is active.
+     *
+     * Background: [BluetoothGatt] will fail to execute its offered async-operations
+     * (like [BluetoothGatt.readCharacteristic], [BluetoothGatt.writeCharacteristic], etc.)
+     * when attempting to start such operation, while
+     */
+    private val semaphore = Channel<Unit>(1)
+
     // First Pair being the key: <ServiceUUID, CharacteristicUUID>
     private val notificationSubscriptions =
         mutableListOf<Pair<Pair<UUID, UUID>, NotificationSubscription>>()
@@ -57,6 +67,7 @@ internal class Client(context: Context, parentJob: Job? = null) {
             triggerDisconnect()
         } finally {
             scope.cancel("Parent Client-instance will be destroyed.")
+            semaphore.close()
         }
     }
 
@@ -95,27 +106,25 @@ internal class Client(context: Context, parentJob: Job? = null) {
     suspend fun readGattCharacteristicAsync(
         service: UUID,
         characteristic: UUID
-    ): ByteArray {
-        readGattCharacteristic(service, characteristic)
-
+    ): ByteArray = executeGattOperation {
+        readCharacteristic(service, characteristic)
         val response = gattCallback.asyncOperationResponseFlow
             .mapNotNull { it as? CharacteristicReadResponse }
             .first()
+
         response.characteristic.ensureIdentity(service, characteristic)
 
         if (response.status != GATT_STATUS_SUCCESS)
             throw AsyncOperationFailedException(response.status)
 
-        return response.characteristic.value
+        return@executeGattOperation response.characteristic.value
     }
 
     fun readGattCharacteristic(
         service: UUID,
         characteristic: UUID
     ) {
-        with(getGattClientOrThrow()) {
-            readCharacteristic(service, characteristic)
-        }
+        scope.launch { readGattCharacteristicAsync(service, characteristic) }
     }
 
     /**
@@ -131,9 +140,8 @@ internal class Client(context: Context, parentJob: Job? = null) {
         characteristic: UUID,
         data: ByteArray,
         shouldWaitForResponse: Boolean = false
-    ) {
-        writeGattCharacteristic(service, characteristic, data, shouldWaitForResponse)
-
+    ) = executeGattOperation {
+        writeCharacteristic(service, characteristic, data, shouldWaitForResponse)
         val response = gattCallback.asyncOperationResponseFlow
             .mapNotNull { it as? CharacteristicWriteResponse }
             .first()
@@ -149,8 +157,13 @@ internal class Client(context: Context, parentJob: Job? = null) {
         data: ByteArray,
         shouldWaitForResponse: Boolean = false
     ) {
-        with(getGattClientOrThrow()) {
-            writeCharacteristic(service, characteristic, data, shouldWaitForResponse)
+        scope.launch {
+            writeGattCharacteristicAsync(
+                service,
+                characteristic,
+                data,
+                shouldWaitForResponse
+            )
         }
     }
 
@@ -159,8 +172,8 @@ internal class Client(context: Context, parentJob: Job? = null) {
         characteristic: UUID,
         descriptor: UUID,
         data: ByteArray
-    ) {
-        writeGattDescriptor(service, characteristic, descriptor, data)
+    ) = executeGattOperation {
+        writeDescriptor(service, characteristic, descriptor, data)
 
         val response = gattCallback.asyncOperationResponseFlow
             .mapNotNull { it as? DescriptorWriteResponse }
@@ -177,9 +190,7 @@ internal class Client(context: Context, parentJob: Job? = null) {
         descriptor: UUID,
         data: ByteArray
     ) {
-        with(getGattClientOrThrow()) {
-            writeDescriptor(service, characteristic, descriptor, data)
-        }
+        scope.launch { writeGattDescriptorAsync(service, characteristic, descriptor, data) }
     }
 
     suspend fun startNotifyAsync(
@@ -188,7 +199,7 @@ internal class Client(context: Context, parentJob: Job? = null) {
         onCharacteristicChanged: OnNotificationReceived
     ): NotificationSubscription.CancellationToken {
         writeGattClientConfigurationDescriptorAsync(service, characteristic, true)
-        with(getGattClientOrThrow()) {
+        executeGattOperation {
             setCharacteristicNotification(service, characteristic, true)
         }
 
@@ -217,14 +228,21 @@ internal class Client(context: Context, parentJob: Job? = null) {
         val (serviceUUID, characteristicUUID) = key
 
         if (stateManager.state !is Disconnected) {
-            with(getGattClientOrThrow()) {
+            scope.launch {
                 try {
-                    writeClientConfigurationDescriptor(serviceUUID, characteristicUUID, false)
-                    setCharacteristicNotification(serviceUUID, characteristicUUID, false)
+                    writeGattClientConfigurationDescriptorAsync(
+                        serviceUUID,
+                        characteristicUUID,
+                        false
+                    )
+                    executeGattOperation {
+                        setCharacteristicNotification(serviceUUID, characteristicUUID, false)
+                    }
                 } catch (err: Throwable) {
                     Log.e(
                         TAG, "Failed to update characteristic " +
-                                "Client-Configuration-Descriptor with notification disabled."
+                                "Client-Configuration-Descriptor with notification disabled, " +
+                                "due to error", err
                     )
                 }
             }
@@ -316,7 +334,35 @@ internal class Client(context: Context, parentJob: Job? = null) {
     }
 
     /**
-     * Returns the current state's gatt-client, or `null` if current-state
+     * Executes the specified block, or throws if current-state
+     * does not feature a gatt-client or the gatt-client is currently not ready
+     * for accepting operations.
+     */
+    private suspend fun <T> executeGattOperation(block: suspend BluetoothGatt.() -> T): T {
+//        Log.d(
+//            TAG, "executeGattOperation($i) - schedule " +
+//                    "(operationQueue.isEmpty=${semaphore.isEmpty})"
+//        )
+
+        val result = try {
+            // May suspend until BluetoothGatt is ready to execute the next operation.
+            semaphore.send(Unit)
+
+            withTimeout(3_000L) {
+//                Log.d(TAG, "executeGattOperation($i) - execute")
+                with(getGattClientOrThrow()) {
+                    block()
+                }
+            }
+        } finally {
+            semaphore.tryReceive()
+        }
+
+        return result
+    }
+
+    /**
+     * Returns the current state's gatt-client, or throws if current-state
      * does not feature a gatt-client or the gatt-client is currently not ready
      * for accepting operations.
      */
@@ -367,7 +413,7 @@ private suspend fun Client.writeGattClientConfigurationDescriptorAsync(
     )
 }
 
-private fun Client.writeClientConfigurationDescriptor(
+private fun Client.writeGattClientConfigurationDescriptor(
     service: UUID,
     characteristic: UUID,
     enableNotification: Boolean
