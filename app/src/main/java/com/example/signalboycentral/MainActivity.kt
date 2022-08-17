@@ -115,11 +115,11 @@ class MainActivity : AppCompatActivity(), ActivityCompat.OnRequestPermissionsRes
         updateView()
     }
 
-    override fun onStop() {
-        super.onStop()
-
-        stopSignalboyFacade()
-    }
+//    override fun onStop() {
+//        super.onStop()
+//
+//        stopSignalboyFacade()
+//    }
 
     override fun onCreateOptionsMenu(menu: Menu): Boolean {
         // Inflate the menu; this adds items to the action bar if it is present.
