@@ -136,8 +136,6 @@ class SignalboyService internal constructor(
                 val rejectRequestAddresses = rejectRequests
                     .filter { (_, rejectRequest) -> rejectRequest.isValid() }
                     .map { (address, _) -> address }
-                Log.d(TAG, "rejectRequests=$rejectRequests")
-                Log.d(TAG, "rejectRequestAddresses=$rejectRequestAddresses")
 
                 val devices = Scanner(bluetoothAdapter).discoverPeripherals(
                     rejectRequestAddresses,
