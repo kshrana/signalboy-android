@@ -35,6 +35,7 @@ class SignalboyService internal constructor(
     private val bluetoothAdapter: BluetoothAdapter,
     /**
      * The fixed-delay that the resulting signals emitted by the Signalboy-device will be delayed.
+     * In milliseconds.
      *
      * DISCUSSION: This delay is utilized to normalize the delay caused by network-latency (Bluetooth).
      * In order to produce the actual event-times, the (third-party) receiving system will have

@@ -46,16 +46,24 @@ that will reduce the accuracy of the delta between the events as signaled by the
 This project contains a sample Android app that demos the capabilities and the usage of
 `SignalboyFacade`.
 
-## Customization
+## Configuration
+The following values can be customized on initialization of the service by passing a custom
+`SignalboyFacade.Configuration`-instance when binding the `SignalboyFacade` (passed as an Extra
+on the Android Intent):
+| Property             | Description                                                                                                  | Default value |
+|----------------------|--------------------------------------------------------------------------------------------------------------|---------------|
+| `normalizationDelay` | The fixed-delay that the resulting signals emitted by the Signalboy-device will be delayed. In milliseconds. | 100           |
+|                      |                                                                                                              |               |
+|                      |                                                                                                              |               |
+
+
 ### Normalization delay
-The fixed-delay that the resulting signals emitted by the Signalboy-device will be delayed.
+The fixed-delay that the resulting signals emitted by the Signalboy-device will be delayed. In milliseconds.
 
 **Background**: This fixed-delay is utilized to normalize the delay caused by 
 network-latency (Bluetooth). In order to produce the actual event-times, the (third-party) receiving
 system will have to subtract the specified Normalization-Delay from the timestamps of the received
 electronic TTL-events.
-
-**Customization**: S. `SignalboyFacade.Configuration`'s property `normalizationDelay`.
 
 ## Releasing
 1. Bump the library version variable `libraryVersion` of the library's [build.gradle](./signalboy_android/build.gradle) file.
