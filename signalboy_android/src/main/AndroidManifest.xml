@@ -8,10 +8,14 @@
         android:maxSdkVersion="30" />
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN"
         android:maxSdkVersion="30" />
-    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"
-        android:maxSdkVersion="30" />
-    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"
-        android:maxSdkVersion="30" />
+    <!--  The Meta Quest Store prohibits use of the Location-permissions,  -->
+    <!--  s. https://developer.oculus.com/resources/vrc-quest-security-2/#prohibited-android-permissions  -->
+    <!--  for a list of Android Permissions prohibited by the Meta Quest Store.  -->
+    <!--  Also s. [this discussion on the Oculus Forums](https://developer.oculus.com/resources/vrc-quest-security-2/).  -->
+    <!--    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"-->
+    <!--        android:maxSdkVersion="30" />-->
+    <!--    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"-->
+    <!--        android:maxSdkVersion="30" />-->
 
     <!-- Include "neverForLocation" only if you can strongly assert that
          your app never derives physical location from Bluetooth scan results. -->

@@ -5,11 +5,26 @@ Some key features are:
 * Auto-connection handling
 * Clock-synchronization training (handled automatically by the service)
 
+## TODO
+Signalboy won't function right now (s. [Android Permissions](#android-permissions)). Its function
+will be restored by completing the following tasks:
+- [ ] Make and manage connections to BLE devices without using location permissions (Meta suggests
+using the CompanionDeviceManager API)
+
 ## Installation
 The latest release is provided as a local Maven repository. Download it from [Releases](https://github.com/kshrana/signalboy-android/releases/latest) and extract the contents to a location accessible as a Maven local repository (e.g. `~/.m2/repository/`). Finally declare the dependency in your `build.gradle`:
 ```groovy
 implementation 'de.kishorrana:signalboy_android:1.0.0'  // Make sure to reference the latest release.
 ```
+
+## Android Permissions
+Initially location permissions (`ACCESS_COARSE_LOCATION` and `ACCESS_FINE_LOCATION`)
+were requested to scan for nearby Bluetooth devices. The Meta Quest Store forbids use of
+[these permissions](https://developer.oculus.com/resources/vrc-quest-security-2/#prohibited-android-permissions).  
+In order to allow depending apps to be published, version `1.0.3` removes these permissions
+from the `AndroidManifest`. As such Signalboy will fail to request the Runtime Permissions
+required for the operation of its implementation (and would fail to find any Bluetooth devices
+during the scan if permission check would be skipped).
 
 ## Usage
 For your convenience `SignalboyFacade` (implemented as an
