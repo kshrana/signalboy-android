@@ -1,6 +1,8 @@
 <resources>
     <string name="app_name">Signalboy Central</string>
-    <string name="action_settings">Settings</string>
+    <string name="action_device_management">Manage Devices</string>
+
+    <string name="activity_device_management_title">Companion Devices</string>
 
     <string name="ok">OK</string>
 

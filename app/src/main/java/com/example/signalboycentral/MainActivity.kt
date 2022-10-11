@@ -21,10 +21,7 @@ import androidx.lifecycle.lifecycleScope
 import com.example.signalboycentral.databinding.ActivityMainBinding
 import com.google.android.material.shape.ShapeAppearanceModel
 import com.google.android.material.snackbar.Snackbar
-import de.kishorrana.signalboy_android.AlreadyConnectingException
-import de.kishorrana.signalboy_android.BluetoothDisabledException
-import de.kishorrana.signalboy_android.NoCompatiblePeripheralDiscovered
-import de.kishorrana.signalboy_android.SignalboyFacade
+import de.kishorrana.signalboy_android.*
 import de.kishorrana.signalboy_android.client.ConnectionTimeoutException
 import de.kishorrana.signalboy_android.client.NoConnectionAttemptsLeftException
 import de.kishorrana.signalboy_android.scanner.AlreadyScanningException
@@ -132,7 +129,9 @@ class MainActivity : AppCompatActivity(), ActivityCompat.OnRequestPermissionsRes
         // automatically handle clicks on the Home/Up button, so long
         // as you specify a parent activity in AndroidManifest.xml.
         return when (item.itemId) {
-            R.id.action_settings -> true
+            R.id.action_settings -> true.also {
+                startActivity(Intent(this, DeviceManagementActivity::class.java))
+            }
             else -> super.onOptionsItemSelected(item)
         }
     }

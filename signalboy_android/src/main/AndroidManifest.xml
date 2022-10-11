@@ -29,7 +29,7 @@
     <!-- <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE" /> -->
 
     <!--  If your app relies on Bluetooth Low Energy, you can use the following:  -->
-    <!--  <uses-feature android:name="android.hardware.bluetooth_le" android:required="true" />  -->
+    <uses-feature android:name="android.hardware.bluetooth_le" android:required="false" />
 
     <application>
         <service android:name="de.kishorrana.signalboy_android.SignalboyFacade" android:exported="false" />
