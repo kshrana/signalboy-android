@@ -9,7 +9,7 @@ def libraryVersion = '1.0.3'
 
 android {
     namespace = 'de.kishorrana.signalboy_android'
-    compileSdk 32
+    compileSdk 33
 
     publishing {
         // Publishes "release" build variant with "release" component created by
@@ -21,8 +21,8 @@ android {
     }
 
     defaultConfig {
-        minSdk 21
-        targetSdk 32
+        minSdk 26
+        targetSdk 33
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         consumerProguardFiles "consumer-rules.pro"
