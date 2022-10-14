@@ -454,9 +454,10 @@ class MainActivity : AppCompatActivity(), ActivityCompat.OnRequestPermissionsRes
     }
 
     private fun stopSignalboyFacade() {
-        if (signalboyFacade == null) return
+        val signalboyFacade = this.signalboyFacade ?: return
 
-        signalboyFacade = null
+        signalboyFacade.unsetOnConnectionStateUpdateListener()
+        this.signalboyFacade = null
         unbindService(signalboyFacadeConnection)
 
         updateView()
