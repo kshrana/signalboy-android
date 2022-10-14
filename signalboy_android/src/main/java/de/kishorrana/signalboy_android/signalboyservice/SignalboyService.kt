@@ -26,11 +26,6 @@ import de.kishorrana.signalboy_android.sync.State as SyncState
 private const val TAG = "SignalboyService"
 
 class SignalboyService internal constructor(
-    // Reimplementing `SignalboyService` as an Android Bound Service would
-    // make capturing the Context unnecessary.
-    //
-    // s. Android SDK documentation for a reference implementation:
-    // https://developer.android.com/guide/topics/connectivity/bluetooth/connect-gatt-server#setup-bound-service
     private val context: Context,
     private val bluetoothAdapter: BluetoothAdapter,
     /**
