@@ -424,10 +424,9 @@ class MainActivity : AppCompatActivity(), ActivityCompat.OnRequestPermissionsRes
 
     private fun onPermissionsEnsured() {
         val bluetoothAdapter = SignalboyFacade.getDefaultAdapter(this)
-        try {
-            SignalboyFacade.verifyPrerequisites(this, bluetoothAdapter)
-        } catch (err: Throwable) {
-            Log.e(TAG, "Prerequisites are not met. Error: $err")
+        val (unmetPrerequisite) = SignalboyFacade.verifyPrerequisites(this, bluetoothAdapter)
+        if (unmetPrerequisite != null) {
+            Log.e(TAG, "Prerequisites are not met. Unmet prerequisite: $unmetPrerequisite")
             return
         }
 

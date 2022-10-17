@@ -180,7 +180,14 @@ class SignalboyFacade : LifecycleService() {
             }
 
         @JvmStatic
-        fun verifyPrerequisites(context: Context, bluetoothAdapter: BluetoothAdapter) {
+        fun verifyPrerequisites(
+            context: Context,
+            bluetoothAdapter: BluetoothAdapter
+        ): PrerequisitesResult {
+            if (!bluetoothAdapter.isEnabled) {
+                return PrerequisitesResult(Prerequisite.BluetoothEnabledPrerequisite)
+            }
+
             val requiredRuntimePermissions = mutableListOf<String>()
             if (Build.VERSION.SDK_INT >= 31) {
                 requiredRuntimePermissions.addAll(
@@ -205,13 +212,16 @@ class SignalboyFacade : LifecycleService() {
                         permission
                     ) != PackageManager.PERMISSION_GRANTED
                 ) {
-                    throw MissingRequiredRuntimePermissionException(permission)
+                    return PrerequisitesResult(
+                        Prerequisite.RuntimePermissionsPrerequisite(permission)
+                    )
                 }
             }
 
-            if (!bluetoothAdapter.isEnabled) throw BluetoothDisabledException()
-
-            Log.d(TAG, "Successfully verified all prerequisites.")
+            // We're good – all prerequisites met.
+            return PrerequisitesResult(null).also {
+                Log.d(TAG, "Successfully verified all prerequisites.")
+            }
         }
     }
 
@@ -235,6 +245,14 @@ class SignalboyFacade : LifecycleService() {
             @JvmStatic
             val Default: Configuration by lazy { Configuration(normalizationDelay = 100L) }
         }
+    }
+
+    data class PrerequisitesResult internal constructor(val unmetPrerequisite: Prerequisite?)
+
+    sealed class Prerequisite {
+        object BluetoothEnabledPrerequisite : Prerequisite()
+        data class RuntimePermissionsPrerequisite internal constructor(val permission: String) :
+            Prerequisite()
     }
 
     fun interface OnConnectionStateUpdateListener {
