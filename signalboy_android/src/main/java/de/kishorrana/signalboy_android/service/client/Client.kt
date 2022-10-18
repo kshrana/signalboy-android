@@ -1,4 +1,4 @@
-package de.kishorrana.signalboy_android.client
+package de.kishorrana.signalboy_android.service.client
 
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothGatt
@@ -6,16 +6,16 @@ import android.bluetooth.BluetoothGattCharacteristic
 import android.bluetooth.BluetoothGattDescriptor
 import android.content.Context
 import android.util.Log
-import de.kishorrana.signalboy_android.client.ClientBluetoothGattCallback.GattOperationResponse.*
-import de.kishorrana.signalboy_android.client.Event.OnConnectionRequested
-import de.kishorrana.signalboy_android.client.Event.OnDisconnectRequested
-import de.kishorrana.signalboy_android.client.State.*
-import de.kishorrana.signalboy_android.client.util.readCharacteristic
-import de.kishorrana.signalboy_android.client.util.setCharacteristicNotification
-import de.kishorrana.signalboy_android.client.util.writeCharacteristic
-import de.kishorrana.signalboy_android.client.util.writeDescriptor
-import de.kishorrana.signalboy_android.gatt.CLIENT_CONFIGURATION_DESCRIPTOR_UUID
-import de.kishorrana.signalboy_android.gatt.GATT_STATUS_SUCCESS
+import de.kishorrana.signalboy_android.service.client.ClientBluetoothGattCallback.GattOperationResponse.*
+import de.kishorrana.signalboy_android.service.client.Event.OnConnectionRequested
+import de.kishorrana.signalboy_android.service.client.Event.OnDisconnectRequested
+import de.kishorrana.signalboy_android.service.client.State.*
+import de.kishorrana.signalboy_android.service.client.util.readCharacteristic
+import de.kishorrana.signalboy_android.service.client.util.setCharacteristicNotification
+import de.kishorrana.signalboy_android.service.client.util.writeCharacteristic
+import de.kishorrana.signalboy_android.service.client.util.writeDescriptor
+import de.kishorrana.signalboy_android.service.gatt.CLIENT_CONFIGURATION_DESCRIPTOR_UUID
+import de.kishorrana.signalboy_android.service.gatt.GATT_STATUS_SUCCESS
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.*

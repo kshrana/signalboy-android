@@ -1,12 +1,12 @@
-package de.kishorrana.signalboy_android.scanner
+package de.kishorrana.signalboy_android.service.scanner
 
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.le.*
 import android.os.ParcelUuid
 import android.util.Log
-import de.kishorrana.signalboy_android.BluetoothDisabledException
-import de.kishorrana.signalboy_android.MissingRequiredRuntimePermissionException
+import de.kishorrana.signalboy_android.service.BluetoothDisabledException
+import de.kishorrana.signalboy_android.service.MissingRequiredRuntimePermissionException
 import kotlinx.coroutines.*
 import java.util.*
 

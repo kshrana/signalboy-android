@@ -1,17 +1,16 @@
-package de.kishorrana.signalboy_android.sync
+package de.kishorrana.signalboy_android.service.sync
 
 import android.util.Log
 import com.tinder.StateMachine
 import de.kishorrana.signalboy_android.TRAINING_INTERVAL_IN_MILLIS
 import de.kishorrana.signalboy_android.TRAINING_MESSAGES_COUNT
-import de.kishorrana.signalboy_android.client.Client
-import de.kishorrana.signalboy_android.client.endpoint.readGattCharacteristicAsync
-import de.kishorrana.signalboy_android.client.endpoint.startNotifyAsync
-import de.kishorrana.signalboy_android.client.endpoint.writeGattCharacteristicAsync
-import de.kishorrana.signalboy_android.gatt.ReferenceTimestampCharacteristic
-import de.kishorrana.signalboy_android.gatt.TimeNeedsSyncCharacteristic
-import de.kishorrana.signalboy_android.sync.Event.*
-import de.kishorrana.signalboy_android.sync.State.*
+import de.kishorrana.signalboy_android.service.client.Client
+import de.kishorrana.signalboy_android.service.client.endpoint.readGattCharacteristicAsync
+import de.kishorrana.signalboy_android.service.client.endpoint.startNotifyAsync
+import de.kishorrana.signalboy_android.service.client.endpoint.writeGattCharacteristicAsync
+import de.kishorrana.signalboy_android.service.gatt.TimeNeedsSyncCharacteristic
+import de.kishorrana.signalboy_android.service.sync.Event.*
+import de.kishorrana.signalboy_android.service.sync.State.*
 import de.kishorrana.signalboy_android.util.fromByteArrayLE
 import de.kishorrana.signalboy_android.util.now
 import de.kishorrana.signalboy_android.util.toByteArrayLE
@@ -21,9 +20,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlin.coroutines.CoroutineContext
 
-private const val TAG = "SignalboySyncService"
+private const val TAG = "SignalboySyncManager"
 
-internal class SyncService {
+internal class SyncManager {
     private val _latestState: MutableStateFlow<State> = MutableStateFlow(Detached)
     val latestState: StateFlow<State> = _latestState.asStateFlow()
 
@@ -184,7 +183,7 @@ internal class SyncService {
         }
 
         private fun Initiated.detach() =
-            scope.cancel("SyncService is transitioning to Detached-state.")
+            scope.cancel("SyncManager is transitioning to Detached-state.")
 
         private fun Attached.detach() {
             (this as Initiated).detach()
@@ -240,7 +239,7 @@ internal class SyncService {
             }
 
             client.writeGattCharacteristicAsync(
-                ReferenceTimestampCharacteristic,
+                de.kishorrana.signalboy_android.service.gatt.ReferenceTimestampCharacteristic,
                 timestamp.toByteArrayLE(),
                 false
             )

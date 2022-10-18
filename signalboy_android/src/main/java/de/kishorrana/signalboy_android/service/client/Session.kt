@@ -1,4 +1,4 @@
-package de.kishorrana.signalboy_android.client
+package de.kishorrana.signalboy_android.service.client
 
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothGatt

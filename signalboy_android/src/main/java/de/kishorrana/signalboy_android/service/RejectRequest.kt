@@ -1,4 +1,4 @@
-package de.kishorrana.signalboy_android.signalboyservice
+package de.kishorrana.signalboy_android.service
 
 import java.util.*
 

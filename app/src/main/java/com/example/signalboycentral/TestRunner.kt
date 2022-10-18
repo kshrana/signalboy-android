@@ -1,14 +1,14 @@
 package com.example.signalboycentral
 
-import de.kishorrana.signalboy_android.SignalboyFacade
+import de.kishorrana.signalboy_android.service.SignalboyService
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 
 class TestRunner {
-    suspend fun execute(signalboyFacade: SignalboyFacade) {
+    suspend fun execute(signalboyService: SignalboyService) {
         try {
             while (true) {
-                signalboyFacade.sendEvent()
+                signalboyService.trySendEvent()
                 delay(1 * 1_000L)
             }
         } catch (err: CancellationException) {

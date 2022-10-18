@@ -1,8 +1,8 @@
-package de.kishorrana.signalboy_android.client.endpoint
+package de.kishorrana.signalboy_android.service.client.endpoint
 
-import de.kishorrana.signalboy_android.client.Client
-import de.kishorrana.signalboy_android.client.Client.Endpoint
-import de.kishorrana.signalboy_android.client.OnNotificationReceived
+import de.kishorrana.signalboy_android.service.client.Client
+import de.kishorrana.signalboy_android.service.client.Client.Endpoint
+import de.kishorrana.signalboy_android.service.client.OnNotificationReceived
 
 internal suspend fun Client.readGattCharacteristicAsync(
     characteristic: Endpoint.Characteristic

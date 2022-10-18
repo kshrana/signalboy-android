@@ -27,12 +27,12 @@ required for the operation of its implementation (and would fail to find any Blu
 during the scan if permission check would be skipped).
 
 ## Usage
-For your convenience `SignalboyFacade` (implemented as an
+For your convenience `SignalboyService` (implemented as an
 [Android Bound-Service](https://developer.android.com/guide/components/bound-services))
 is supplied with an easy-to-use interface enabling you to:
 * Signal events
 
-Once `SignalboyFacade` is started (s. 
+Once `SignalboyService` is started (s. 
 [Android docs for binding to a
 bound service](https://developer.android.com/guide/components/bound-services#Binding)
 ) it automatically tries to connect to the Signalboy-device. (The required Bluetooth-connection and 
@@ -59,17 +59,17 @@ that will reduce the accuracy of the delta between the events as signaled by the
 
 ## Sample App
 This project contains a sample Android app that demos the capabilities and the usage of
-`SignalboyFacade`.
+`SignalboyService`.
 
 ## Configuration
 The following values can be customized on initialization of the service by passing a custom
-`SignalboyFacade.Configuration`-instance when binding the `SignalboyFacade` (passed as an Extra
+`SignalboyService.Configuration`-instance when binding the `SignalboyService` (passed as an Extra
 on the Android Intent):
-| Property             | Description                                                                                                  | Default value |
-|----------------------|--------------------------------------------------------------------------------------------------------------|---------------|
-| `normalizationDelay` | The fixed-delay that the resulting signals emitted by the Signalboy-device will be delayed. In milliseconds. | 100           |
-|                      |                                                                                                              |               |
-|                      |                                                                                                              |               |
+| Property                 | Description                                                                                                     | Default value |
+|--------------------------|-----------------------------------------------------------------------------------------------------------------|---------------|
+|   `normalizationDelay`   | The fixed-delay that the resulting signals emitted by the Signalboy-device will be delayed. In milliseconds.    | 100           |
+| `isAutoReconnectEnabled` | If `true`, the service will automatically try to reconnect if connection to the Signalboy Device has been lost. | true          |
+|                          |                                                                                                                 |               |
 
 
 ### Normalization delay

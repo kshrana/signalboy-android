@@ -1,6 +1,6 @@
-package de.kishorrana.signalboy_android.gatt
+package de.kishorrana.signalboy_android.service.gatt
 
-import de.kishorrana.signalboy_android.client.Client
+import de.kishorrana.signalboy_android.service.client.Client
 import java.util.*
 
 internal object SignalboyGattAttributes {

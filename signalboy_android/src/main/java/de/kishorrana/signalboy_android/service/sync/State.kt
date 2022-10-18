@@ -1,6 +1,6 @@
-package de.kishorrana.signalboy_android.sync
+package de.kishorrana.signalboy_android.service.sync
 
-import de.kishorrana.signalboy_android.client.Client
+import de.kishorrana.signalboy_android.service.client.Client
 import kotlinx.coroutines.CoroutineScope
 import kotlin.coroutines.CoroutineContext
 

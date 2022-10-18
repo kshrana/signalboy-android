@@ -1,7 +1,7 @@
-package de.kishorrana.signalboy_android.client.util
+package de.kishorrana.signalboy_android.service.client.util
 
 import android.bluetooth.BluetoothGattService
-import de.kishorrana.signalboy_android.gatt.SignalboyGattAttributes
+import de.kishorrana.signalboy_android.service.gatt.SignalboyGattAttributes
 
 internal fun Collection<BluetoothGattService>.hasAllSignalboyGattAttributes(): Boolean {
     val requiredServices =

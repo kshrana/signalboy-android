@@ -1,4 +1,4 @@
-package de.kishorrana.signalboy_android
+package de.kishorrana.signalboy_android.service
 
 class MissingRequiredRuntimePermissionException(
     val permission: String? = null,

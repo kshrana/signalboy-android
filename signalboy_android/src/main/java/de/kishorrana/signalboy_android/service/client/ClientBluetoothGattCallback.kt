@@ -1,8 +1,8 @@
-package de.kishorrana.signalboy_android.client
+package de.kishorrana.signalboy_android.service.client
 
 import android.bluetooth.*
 import android.util.Log
-import de.kishorrana.signalboy_android.gatt.GATT_STATUS_SUCCESS
+import de.kishorrana.signalboy_android.service.gatt.GATT_STATUS_SUCCESS
 import de.kishorrana.signalboy_android.util.toHexString
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.channels.Channel

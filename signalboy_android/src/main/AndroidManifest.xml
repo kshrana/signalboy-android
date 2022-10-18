@@ -32,6 +32,7 @@
     <uses-feature android:name="android.hardware.bluetooth_le" android:required="false" />
 
     <application>
-        <service android:name="de.kishorrana.signalboy_android.SignalboyFacade" android:exported="false" />
+        <service android:name="de.kishorrana.signalboy_android.service.SignalboyService"
+            android:exported="false" />
     </application>
 </manifest>

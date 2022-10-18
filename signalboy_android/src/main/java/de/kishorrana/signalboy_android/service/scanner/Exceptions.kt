@@ -1,4 +1,4 @@
-package de.kishorrana.signalboy_android.scanner
+package de.kishorrana.signalboy_android.service.scanner
 
 class AlreadyScanningException : IllegalStateException("Already scanning…")
 

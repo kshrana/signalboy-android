@@ -1,4 +1,4 @@
-package de.kishorrana.signalboy_android.client
+package de.kishorrana.signalboy_android.service.client
 
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothGattCallback
@@ -7,9 +7,9 @@ import android.content.Context
 import android.util.Log
 import com.tinder.StateMachine
 import de.kishorrana.signalboy_android.CONNECTION_ATTEMPT_TIMEOUT_IN_MILLIS
-import de.kishorrana.signalboy_android.gatt.GATT_STATUS_CONNECTION_TIMEOUT
-import de.kishorrana.signalboy_android.gatt.GATT_STATUS_SUCCESS
-import de.kishorrana.signalboy_android.MissingRequiredRuntimePermissionException
+import de.kishorrana.signalboy_android.service.MissingRequiredRuntimePermissionException
+import de.kishorrana.signalboy_android.service.gatt.GATT_STATUS_CONNECTION_TIMEOUT
+import de.kishorrana.signalboy_android.service.gatt.GATT_STATUS_SUCCESS
 import de.kishorrana.signalboy_android.util.toHexString
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow

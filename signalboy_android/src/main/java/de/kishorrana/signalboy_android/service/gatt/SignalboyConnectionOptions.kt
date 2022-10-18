@@ -1,4 +1,4 @@
-package de.kishorrana.signalboy_android.gatt
+package de.kishorrana.signalboy_android.service.gatt
 
 private const val CONNECTION_OPTION_REJECT_REQUEST = 1 shl 0
 

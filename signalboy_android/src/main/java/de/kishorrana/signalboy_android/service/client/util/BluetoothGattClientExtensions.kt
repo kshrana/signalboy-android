@@ -1,13 +1,13 @@
-package de.kishorrana.signalboy_android.client.util
+package de.kishorrana.signalboy_android.service.client.util
 
 import android.bluetooth.BluetoothGatt
 import android.bluetooth.BluetoothGattCharacteristic
 import android.bluetooth.BluetoothGattDescriptor
-import de.kishorrana.signalboy_android.MissingRequiredRuntimePermissionException
-import de.kishorrana.signalboy_android.client.CharacteristicNotFoundException
-import de.kishorrana.signalboy_android.client.DescriptorNotFoundException
-import de.kishorrana.signalboy_android.client.FailedToStartAsyncOperationException
-import de.kishorrana.signalboy_android.client.ServiceNotFoundException
+import de.kishorrana.signalboy_android.service.MissingRequiredRuntimePermissionException
+import de.kishorrana.signalboy_android.service.client.CharacteristicNotFoundException
+import de.kishorrana.signalboy_android.service.client.DescriptorNotFoundException
+import de.kishorrana.signalboy_android.service.client.FailedToStartAsyncOperationException
+import de.kishorrana.signalboy_android.service.client.ServiceNotFoundException
 import java.util.*
 
 internal fun BluetoothGatt.readCharacteristic(
