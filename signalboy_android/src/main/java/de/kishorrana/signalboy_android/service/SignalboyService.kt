@@ -236,7 +236,7 @@ class SignalboyService : LifecycleService() {
     }
 
     suspend fun sendEvent() {
-        val firedateTimestamp = now() + configuration.normalizationDelay
+        val fireDateTimestamp = now() + configuration.normalizationDelay
 
         val isSynced = when (val state = state) {
             is State.Connected -> state.isSynced
@@ -244,7 +244,7 @@ class SignalboyService : LifecycleService() {
         }
 
         if (isSynced) {
-            val data = firedateTimestamp.toUInt().toByteArrayLE()
+            val data = fireDateTimestamp.toUInt().toByteArrayLE()
             client.writeGattCharacteristicAsync(TargetTimestampCharacteristic, data, false)
         } else {
             // Fallback to unsynced method.
@@ -252,7 +252,7 @@ class SignalboyService : LifecycleService() {
                 TAG, "Falling back to unsynced signaling of event as connected peripheral is " +
                         "not synced. Timing will be inaccurate."
             )
-            delay(firedateTimestamp - now())
+            delay(fireDateTimestamp - now())
             client.writeGattCharacteristicAsync(
                 TriggerTimerCharacteristic,
                 byteArrayOf(0x01),
