@@ -1,6 +1,7 @@
 package com.example.signalboycentral
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
@@ -13,6 +14,7 @@ import android.util.Log
 import android.view.Menu
 import android.view.MenuItem
 import androidx.annotation.DrawableRes
+import androidx.annotation.IdRes
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
@@ -47,6 +49,7 @@ private val locationRuntimePermissions = arrayOf(
     Manifest.permission.ACCESS_FINE_LOCATION,
 )
 
+@SuppressLint("SetTextI18n")
 class MainActivity : AppCompatActivity(), ActivityCompat.OnRequestPermissionsResultCallback {
 
     private lateinit var binding: ActivityMainBinding
@@ -93,24 +96,35 @@ class MainActivity : AppCompatActivity(), ActivityCompat.OnRequestPermissionsRes
 
         setSupportActionBar(binding.toolbar)
 
-        binding.fab.setOnClickListener { onFabClicked() }
-        binding.contentMain.buttonSync.setOnClickListener { signalboyService!!.tryTriggerSync() }
-        binding.contentMain.buttonTest.apply {
-            setOnClickListener {
-                if (testing?.isActive == true) {
-                    testing?.cancel()
-                    text = getString(R.string.button_test_start)
-                } else {
-                    signalboyService?.let {
-                        testing = lifecycleScope.launch { TestRunner().execute(it) }
-                        text = getString(R.string.button_test_stop)
+        with(binding) {
+            fab.setOnClickListener { onFabClicked() }
+        }
+        with(binding.contentMain) {
+            imageViewBtStatus.shapeAppearanceModel = ShapeAppearanceModel.builder()
+                .setAllCornerSizes(ShapeAppearanceModel.PILL)
+                .build()
+            toggleButtonGroupDiscovery.addOnButtonCheckedListener { _, checkedId, isChecked ->
+                if (isChecked) {
+                    onDiscoveryModeButtonChecked(checkedId)
+                }
+            }
+
+            buttonSync.setOnClickListener { signalboyService!!.tryTriggerSync() }
+            buttonTest.apply {
+                setOnClickListener {
+                    if (testing?.isActive == true) {
+                        testing?.cancel()
+                        text = getString(R.string.button_test_start)
+                    } else {
+                        signalboyService?.let {
+                            testing = lifecycleScope.launch { TestRunner().execute(it) }
+                            text = getString(R.string.button_test_stop)
+                        }
                     }
                 }
             }
         }
-        binding.contentMain.imageViewBtStatus.shapeAppearanceModel = ShapeAppearanceModel.builder()
-            .setAllCornerSizes(ShapeAppearanceModel.PILL)
-            .build()
+
 
         updateView()
     }
@@ -119,10 +133,10 @@ class MainActivity : AppCompatActivity(), ActivityCompat.OnRequestPermissionsRes
     override fun onStart() {
         super.onStart()
 
-        if (!_onceToken && signalboyService == null) {
-            startPermissionRequests()
-            _onceToken = true
-        }
+//        if (!_onceToken) {
+//            onFabClicked()
+//            _onceToken = true
+//        }
     }
 
 //    override fun onStop() {
@@ -309,6 +323,15 @@ class MainActivity : AppCompatActivity(), ActivityCompat.OnRequestPermissionsRes
                 binding.contentMain.textSecondary.text = ""
                 setImageViewDrawable(R.drawable.round_power_settings_new_black_24dp)
             }
+        }
+    }
+
+    private fun onDiscoveryModeButtonChecked(@IdRes checkedId: Int) {
+        when (checkedId) {
+            R.id.button_discovery_auto -> TODO()
+            R.id.button_discovery_scanner -> TODO()
+            R.id.button_discovery_companion_device -> TODO()
+            else -> throw IllegalArgumentException("Unknown case: checkedId=$checkedId")
         }
     }
 
