@@ -8,8 +8,8 @@ Some key features are:
 ## TODO
 Signalboy won't function right now (s. [Android Permissions](#android-permissions)). Its function
 will be restored by completing the following tasks:
-- [ ] Make and manage connections to BLE devices without using location permissions (Meta suggests
-using the CompanionDeviceManager API)
+- [ ] Implement CompanionDeviceManager API as alternative discovery strategy
+- [ ] Public method for clearing associations made by Signalboy
 
 ## Installation
 The latest release is provided as a local Maven repository. Download it from [Releases](https://github.com/kshrana/signalboy-android/releases/latest) and extract the contents to a location accessible as a Maven local repository (e.g. `~/.m2/repository/`). Finally declare the dependency in your `build.gradle`:
