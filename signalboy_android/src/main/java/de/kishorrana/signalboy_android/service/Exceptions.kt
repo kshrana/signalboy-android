@@ -7,9 +7,9 @@ class MissingRequiredRuntimePermissionException(
     constructor(cause: Throwable?) : this(null, cause)
 }
 
-class BluetoothDisabledException : Exception("Expects Bluetooth to be enabled.")
+class BluetoothDisabledException : IllegalStateException("Expects Bluetooth to be enabled.")
 
-class NoCompatiblePeripheralDiscovered(message: String?) : Exception(message)
+class NoCompatiblePeripheralDiscovered(message: String?) : IllegalStateException(message)
 
 class AlreadyConnectingException : IllegalStateException("Already connecting…")
 
