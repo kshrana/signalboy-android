@@ -1,7 +1,6 @@
 package de.kishorrana.signalboy_android.service
 
 import android.bluetooth.BluetoothAdapter
-import android.bluetooth.BluetoothManager
 import android.content.Context
 import android.content.Intent
 import android.os.Binder
@@ -21,6 +20,7 @@ import de.kishorrana.signalboy_android.service.client.util.hasAllSignalboyGattAt
 import de.kishorrana.signalboy_android.service.gatt.*
 import de.kishorrana.signalboy_android.service.scanner.Scanner
 import de.kishorrana.signalboy_android.service.sync.SyncManager
+import de.kishorrana.signalboy_android.util.ContextHelper
 import de.kishorrana.signalboy_android.util.fromByteArrayLE
 import de.kishorrana.signalboy_android.util.now
 import de.kishorrana.signalboy_android.util.toByteArrayLE
@@ -512,13 +512,7 @@ class SignalboyService : LifecycleService() {
 
         @JvmStatic
         fun getDefaultAdapter(context: Context): BluetoothAdapter =
-            with(context.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager) {
-                adapter ?: throw Exception(
-                    "Unable to obtain a BluetoothAdapter. " +
-                            "Tip: BLE can be required per the <uses-feature> tag " +
-                            "in the AndroidManifest.xml"
-                )
-            }
+            ContextHelper.getBluetoothAdapter(context)
 
         @JvmStatic
         fun verifyPrerequisites(
