@@ -193,7 +193,7 @@ internal class StateManager(
         return State.Connecting(retryCount + 1, maxRetryCount, newTimeoutTimer, newSession)
     }
 
-    private fun State.InitiatedState.discardAndMakeDisconnectedState(
+    private fun InitiatedState.discardAndMakeDisconnectedState(
         disconnectCause: Throwable?
     ): State.Disconnected {
         closeConnection()
@@ -208,7 +208,7 @@ internal class StateManager(
      * the BluetoothGattCallback.onServicesDiscovered callback is triggered.
      *
      */
-    private fun State.InitiatedState.discoverServices() {
+    private fun InitiatedState.discoverServices() {
         try {
             if (!session.gattClient.discoverServices())
                 throw IllegalStateException(
@@ -220,7 +220,7 @@ internal class StateManager(
         }
     }
 
-    private fun State.InitiatedState.closeConnection() {
+    private fun InitiatedState.closeConnection() {
         try {
             session.gattClient.close()
         } catch (err: SecurityException) {

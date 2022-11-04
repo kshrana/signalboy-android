@@ -18,10 +18,11 @@ internal sealed class State {
         val services: List<BluetoothGattService>,
         override val session: Session
     ) : State(), InitiatedState
+}
 
-    interface InitiatedState {
-        val session: Session
-    }
+// Helper interface
+internal interface InitiatedState {
+    val session: Session
 }
 
 internal sealed class Event {
