@@ -6,30 +6,12 @@ import de.kishorrana.signalboy_android.service.client.OnNotificationReceived
 
 internal suspend fun Client.readGattCharacteristicAsync(
     characteristic: Endpoint.Characteristic
-): ByteArray = readGattCharacteristicAsync(
-    characteristic.serviceUUID,
-    characteristic.characteristicUUID
-)
-
-internal fun Client.readGattCharacteristic(
-    characteristic: Endpoint.Characteristic
-) = readGattCharacteristic(
+): ByteArray = readGattCharacteristic(
     characteristic.serviceUUID,
     characteristic.characteristicUUID
 )
 
 internal suspend fun Client.writeGattCharacteristicAsync(
-    characteristic: Endpoint.Characteristic,
-    data: ByteArray,
-    shouldWaitForResponse: Boolean = false
-) = writeGattCharacteristicAsync(
-    characteristic.serviceUUID,
-    characteristic.characteristicUUID,
-    data,
-    shouldWaitForResponse
-)
-
-internal fun Client.writeGattCharacteristic(
     characteristic: Endpoint.Characteristic,
     data: ByteArray,
     shouldWaitForResponse: Boolean = false
@@ -43,7 +25,7 @@ internal fun Client.writeGattCharacteristic(
 internal suspend fun Client.startNotifyAsync(
     characteristic: Endpoint.Characteristic,
     onCharacteristicChanged: OnNotificationReceived
-): Client.NotificationSubscription.CancellationToken = startNotifyAsync(
+): Client.NotificationSubscription.CancellationToken = startNotify(
     characteristic.serviceUUID,
     characteristic.characteristicUUID,
     onCharacteristicChanged

@@ -1,51 +1,47 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
-
     <!-- Request legacy Bluetooth permissions on older devices. -->
-    <!--    Protection level: normal-->
+    <!-- Protection level: normal -->
     <uses-permission
         android:name="android.permission.BLUETOOTH"
         android:maxSdkVersion="30" />
-    <!--    Needed to initiate device discovery or manipulate Bluetooth settings.-->
-    <!--    Protection level: normal-->
-    <!--    <uses-permission-->
-    <!--        android:name="android.permission.BLUETOOTH_ADMIN"-->
-    <!--        android:maxSdkVersion="30" />-->
-
-    <!--  The Meta Quest Store prohibits use of the Location-permissions,  -->
-    <!--  s. https://developer.oculus.com/resources/vrc-quest-security-2/#prohibited-android-permissions  -->
-    <!--  for a list of Android Permissions prohibited by the Meta Quest Store.  -->
-    <!--  Also s. [this discussion on the Oculus Forums](https://forums.oculusvr.com/t5/Quest-Development/Bluetooth-scan-and-permissions-BLE-and-the/td-p/871648).  -->
-    <!--    <uses-permission-->
-    <!--        android:name="android.permission.ACCESS_COARSE_LOCATION"-->
-    <!--        android:maxSdkVersion="30" />-->
-    <!--    <uses-permission-->
-    <!--        android:name="android.permission.ACCESS_FINE_LOCATION"-->
-    <!--        android:maxSdkVersion="30" />-->
-
-    <!-- Include "neverForLocation" only if you can strongly assert that
-         your app never derives physical location from Bluetooth scan results. -->
-    <!--    Protection level: dangerous-->
+    <!-- Needed to initiate device discovery or manipulate Bluetooth settings. -->
+    <!-- Protection level: normal -->
+    <!-- <uses-permission -->
+    <!-- android:name="android.permission.BLUETOOTH_ADMIN" -->
+    <!-- android:maxSdkVersion="30" /> -->
+    <!-- The Meta Quest Store prohibits use of the Location-permissions, -->
+    <!-- s. https://developer.oculus.com/resources/vrc-quest-security-2/#prohibited-android-permissions -->
+    <!-- for a list of Android Permissions prohibited by the Meta Quest Store. -->
+    <!-- Also s. [this discussion on the Oculus Forums](https://forums.oculusvr.com/t5/Quest-Development/Bluetooth-scan-and-permissions-BLE-and-the/td-p/871648). -->
+    <!-- <uses-permission -->
+    <!-- android:name="android.permission.ACCESS_COARSE_LOCATION" -->
+    <!-- android:maxSdkVersion="30" /> -->
+    <!-- <uses-permission -->
+    <!-- android:name="android.permission.ACCESS_FINE_LOCATION" -->
+    <!-- android:maxSdkVersion="30" /> -->
+    <!--
+ Include "neverForLocation" only if you can strongly assert that
+         your app never derives physical location from Bluetooth scan results.
+    -->
+    <!-- Protection level: dangerous -->
     <uses-permission
         android:name="android.permission.BLUETOOTH_SCAN"
         android:usesPermissionFlags="neverForLocation"
-        tools:targetApi="31" />
-    <!--    Protection level: dangerous-->
+        tools:targetApi="31" /> <!-- Protection level: dangerous -->
     <uses-permission
         android:name="android.permission.BLUETOOTH_CONNECT"
         tools:targetApi="31" />
-
-    <!-- Needed only if your app makes the device discoverable to Bluetooth
-         devices. -->
+    <!--
+ Needed only if your app makes the device discoverable to Bluetooth
+         devices.
+    -->
     <!-- <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE" /> -->
-
-    <!--  If your app relies on Bluetooth Low Energy, you can use the following:  -->
+    <!-- If your app relies on Bluetooth Low Energy, you can use the following: -->
     <uses-feature
         android:name="android.hardware.bluetooth_le"
-        android:required="false" />
-
-    <!--  Companion Device Management API  -->
+        android:required="false" /> <!-- Companion Device Management API -->
     <uses-feature
         android:name="android.software.companion_device_setup"
         android:required="false" />
@@ -54,5 +50,13 @@
         <service
             android:name=".service.SignalboyService"
             android:exported="false" />
+
+        <!-- Activity is only used for testing. -->
+        <!-- -->
+        <!-- (s. https://github.com/robolectric/robolectric/pull/4736 for details) -->
+        <activity
+            android:name=".BlankActivity"
+            android:exported="false" />
     </application>
+
 </manifest>

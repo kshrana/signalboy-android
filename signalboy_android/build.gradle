@@ -41,6 +41,16 @@ android {
     kotlinOptions {
         jvmTarget = '1.8'
     }
+    testOptions {
+        unitTests {
+            // Allows you to access android resources in your unit tests, including your AndroidManifest file.
+            includeAndroidResources true
+        }
+        unitTests.all {
+            // Enable debug logging
+            systemProperty 'robolectric.logging', 'stdout'
+        }
+    }
 }
 
 publishing {
@@ -70,6 +80,7 @@ publishing {
 }
 
 dependencies {
+    implementation 'androidx.appcompat:appcompat:1.5.1'
     def lifecycle_version = "2.5.1"
 
     implementation 'androidx.core:core-ktx:1.9.0'
@@ -80,12 +91,24 @@ dependencies {
     implementation 'com.tinder.statemachine:statemachine:0.2.0'
 
     testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.hamcrest:hamcrest:2.2'
     testImplementation 'org.jetbrains.kotlinx:kotlinx-coroutines-test:1.6.4'
     testImplementation "androidx.lifecycle:lifecycle-runtime-testing:$lifecycle_version"
     testImplementation 'com.natpryce:hamkrest:1.8.0.1'
 
-    androidTestImplementation 'androidx.test.ext:junit:1.1.3'
-    androidTestImplementation 'androidx.test.espresso:espresso-core:3.4.0'
+    // AndroidX Test - JVM testing
+    testImplementation 'org.robolectric:robolectric:4.9'
+    testImplementation 'androidx.test:core-ktx:1.5.0'
+    testImplementation 'androidx.test.ext:junit-ktx:1.1.4'
+    testImplementation 'androidx.test:rules:1.5.0'
+    testImplementation 'org.mockito.kotlin:mockito-kotlin:4.0.0'
+
+    androidTestImplementation 'org.jetbrains.kotlinx:kotlinx-coroutines-test:1.6.4'
+    androidTestImplementation 'androidx.test:core-ktx:1.5.0'
+    androidTestImplementation 'androidx.test.ext:junit-ktx:1.1.4'
+    androidTestImplementation 'androidx.test:rules:1.5.0'
+
+    androidTestImplementation 'androidx.test.espresso:espresso-core:3.5.0'
 }
 
 tasks.register('generateRepo', Zip) {

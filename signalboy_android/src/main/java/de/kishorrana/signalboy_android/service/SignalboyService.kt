@@ -1,26 +1,35 @@
 package de.kishorrana.signalboy_android.service
 
 import android.annotation.SuppressLint
+import android.app.Activity
+import android.app.FragmentManager
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.content.Context
 import android.content.Intent
 import android.os.Binder
 import android.os.IBinder
+import android.os.Looper
 import android.os.Parcelable
 import android.util.Log
 import androidx.lifecycle.LifecycleService
 import androidx.lifecycle.lifecycleScope
 import de.kishorrana.signalboy_android.MIN_IN_MILLISECONDS
 import de.kishorrana.signalboy_android.REJECT_CONNECTION_DURATION_IN_MILLIS
-import de.kishorrana.signalboy_android.SCAN_PERIOD_IN_MILLIS
+import de.kishorrana.signalboy_android.service.SignalboyMediator.State
 import de.kishorrana.signalboy_android.service.client.Client
+import de.kishorrana.signalboy_android.service.client.DefaultClient
 import de.kishorrana.signalboy_android.service.client.endpoint.readGattCharacteristicAsync
 import de.kishorrana.signalboy_android.service.client.endpoint.startNotifyAsync
 import de.kishorrana.signalboy_android.service.client.endpoint.writeGattCharacteristicAsync
 import de.kishorrana.signalboy_android.service.client.util.hasAllSignalboyGattAttributes
+import de.kishorrana.signalboy_android.service.connection_supervising.ConnectionSupervisingManager
+import de.kishorrana.signalboy_android.service.discovery.ActivityResultProxy
+import de.kishorrana.signalboy_android.service.discovery.DeviceDiscoveryManager
+import de.kishorrana.signalboy_android.service.discovery.companion_device.CompanionDeviceManagerFacade
+import de.kishorrana.signalboy_android.service.discovery.companion_device.OriginAwareCompanionDeviceManager
+import de.kishorrana.signalboy_android.service.discovery.companion_device.ui.AssociateFragment
 import de.kishorrana.signalboy_android.service.gatt.*
-import de.kishorrana.signalboy_android.service.scanner.Scanner
 import de.kishorrana.signalboy_android.service.sync.SyncManager
 import de.kishorrana.signalboy_android.util.ContextHelper
 import de.kishorrana.signalboy_android.util.fromByteArrayLE
@@ -37,10 +46,31 @@ import de.kishorrana.signalboy_android.service.sync.State as SyncState
 
 private const val TAG = "SignalboyService"
 
-class SignalboyService : LifecycleService() {
+class SignalboyService : LifecycleService(), SignalboyMediator {
     var onConnectionStateUpdateListener: OnConnectionStateUpdateListener? = null
-    val state: State
+    override val state: State
         get() = latestState.value
+
+    val hasUserInteractionRequest get() = connectionSupervisingManager.hasUserInteractionRequest
+
+    private val _latestState = MutableStateFlow<State>(State.Disconnected(null))
+    override val latestState: StateFlow<State> by lazy {
+        _latestState.asStateFlow()
+            // Also publish to listener (for compatibility).
+            .also {
+                scope.launch {
+                    it
+                        // Discard until first connection-attempt has been made.
+                        .dropWhile { it is State.Disconnected }
+                        .collect { newValue ->
+                            withContext(Dispatchers.Main) {
+                                Log.v(TAG, "state=$state")
+                                onConnectionStateUpdateListener?.stateUpdated(newValue)
+                            }
+                        }
+                }
+            }
+    }
 
     private val binder = LocalBinder()
     private val scope: CoroutineScope
@@ -57,26 +87,16 @@ class SignalboyService : LifecycleService() {
         )
     }
 
-    private val client by lazy { Client(this, parentJob = scope.coroutineContext.job) }
-    private val syncManager by lazy { SyncManager() }
+    private lateinit var bluetoothAdapter: BluetoothAdapter
+    private lateinit var configuration: Configuration
 
-    private val _latestState =
-        MutableStateFlow<State>(State.Disconnected())
-    val latestState = _latestState.asStateFlow()
-        // Also publish to listener (for compatibility).
-        .also {
-            scope.launch {
-                it
-                    // Discard until first connection-attempt has been made.
-                    .dropWhile { it is State.Disconnected }
-                    .collect { newValue ->
-                        withContext(Dispatchers.Main) {
-                            Log.v(TAG, "state=$state")
-                            onConnectionStateUpdateListener?.stateUpdated(newValue)
-                        }
-                    }
-            }
-        }
+    private val client by lazy {
+        DefaultClient(this, parentJob = scope.coroutineContext.job)
+    }
+    private val syncManager by lazy { SyncManager() }
+    private val connectionSupervisingManager by lazy {
+        ConnectionSupervisingManager(this)
+    }
 
     // Key: Address of Peripheral that requested connection-reject
     private val rejectRequests = mutableMapOf<String, RejectRequest>()
@@ -91,9 +111,6 @@ class SignalboyService : LifecycleService() {
     private var syncManagerRestarting: Job? = null
 
     private var connectionSupervising: Job? = null
-
-    private lateinit var bluetoothAdapter: BluetoothAdapter
-    private lateinit var configuration: Configuration
 
     override fun onBind(intent: Intent): IBinder {
         super.onBind(intent)
@@ -114,18 +131,36 @@ class SignalboyService : LifecycleService() {
         super.onDestroy()
     }
 
+    override suspend fun connectToPeripheral() = connectToPeripheral(
+        ConnectionStrategy.DefaultConnectionStrategy(
+            bluetoothAdapter,
+            makeCompanionDeviceManagerFacade(this)
+        )
+    )
+
+    override suspend fun connectToPeripheral(
+        context: Activity,
+        userInteractionProxy: ActivityResultProxy
+    ) = this.connectToPeripheral(
+        ConnectionStrategy.UserInteractionConnectionStrategy(
+            bluetoothAdapter,
+            makeCompanionDeviceManagerFacade(context),
+            userInteractionProxy
+        )
+    )
+
+    // Disconnects gracefully
+    override suspend fun disconnectFromPeripheral() = disconnectFromPeripheralAsync(null)
+
     fun tryDisconnectFromPeripheral() {
         scope.launch {
             try {
-                disconnectFromPeripheralAsync()
-            } catch (err: Throwable) {
-                Log.v(TAG, "tryDisconnectFromPeripheral() - Discarding error:", err)
+                disconnectFromPeripheral()
+            } catch (exception: Exception) {
+                Log.v(TAG, "tryDisconnectFromPeripheral() - Caught exception:", exception)
             }
         }
     }
-
-    // Disconnect gracefully
-    suspend fun disconnectFromPeripheralAsync() = disconnectFromPeripheralAsync(null)
 
     /**
      * Triggers sync manually (process will be performed asynchronously without blocking).
@@ -138,15 +173,60 @@ class SignalboyService : LifecycleService() {
     fun tryTriggerSync(): Boolean {
         try {
             syncManager.debugTriggerSync()
-        } catch (err: Throwable) {
-            Log.e(TAG, "tryTriggerSync() - Failed to trigger sync due to error:", err)
+        } catch (exception: Exception) {
+            Log.e(TAG, "tryTriggerSync() - Failed to trigger sync due to exception:", exception)
             return false
         }
         return true
     }
 
-    suspend fun connectToPeripheralAsync() = coroutineScope {
-        Log.v(TAG, "connectToPeripheralAsync: I'm working in thread ${Thread.currentThread().name}")
+    /**
+     * This is the synchronous variant of `sendEvent`.
+     */
+    fun trySendEvent() {
+        scope.launch { sendEvent() }
+    }
+
+    suspend fun sendEvent() {
+        val fireDateTimestamp = now() + configuration.normalizationDelay
+
+        val isSynced = when (val state = state) {
+            is State.Connected -> state.isSynced
+            else -> return
+        }
+
+        if (isSynced) {
+            val data = fireDateTimestamp.toUInt().toByteArrayLE()
+            client.writeGattCharacteristicAsync(TargetTimestampCharacteristic, data, false)
+        } else {
+            // Fallback to unsynced method.
+            Log.w(
+                TAG, "Falling back to unsynced signaling of event as connected peripheral is " +
+                        "not synced. Timing will be inaccurate."
+            )
+            delay(fireDateTimestamp - now())
+            client.writeGattCharacteristicAsync(
+                TriggerTimerCharacteristic,
+                byteArrayOf(0x01),
+                false
+            )
+        }
+    }
+
+    suspend fun resolveUserInteractionRequest(
+        activity: Activity,
+        userInteractionProxy: ActivityResultProxy
+    ): Result<Unit> = connectionSupervisingManager.resolveUserInteractionRequest(
+        activity,
+        userInteractionProxy
+    )
+
+    private suspend fun connectToPeripheral(strategy: ConnectionStrategy) = coroutineScope {
+        Log.v(
+            TAG,
+            "_connectToPeripheral(strategy=$strategy) – I'm working in thread: " +
+                    Thread.currentThread().name
+        )
         if (connecting?.isActive == true) {
             throw AlreadyConnectingException()
         }
@@ -159,26 +239,38 @@ class SignalboyService : LifecycleService() {
                 //
                 // Filter Peripherals that have active requests for
                 // Connection-Rejection.
-                val rejectRequestAddresses = rejectRequests
-                    .filter { (_, rejectRequest) -> rejectRequest.isValid() }
-                    .map { (address, _) -> address }
-
-                val devices = Scanner(bluetoothAdapter).discoverPeripherals(
-                    rejectRequestAddresses,
-                    SignalboyGattAttributes.OUTPUT_SERVICE_UUID,
-                    SCAN_PERIOD_IN_MILLIS,
-                    true
-                )
-                Log.d(TAG, "Discovered devices (matching set filters): $devices")
-
-                val device = devices.firstOrNull() ?: throw NoCompatiblePeripheralDiscovered(
-                    "Cannot connect: No peripheral matching set filters found during scan."
-                )
-
-                // Try connecting to Peripheral.
-                client.connectAsync(device).also {
-                    (client.state as? ClientState.Connected)?.let(::requireSignalboyGattAttributes)
+                val getRejectRequestAddresses = {
+                    rejectRequests
+                        .filter { (_, rejectRequest) -> rejectRequest.isValid() }
+                        .map { (address, _) -> address }
                 }
+
+                // TODO: Restore scanner-functionality
+//                val devices = Scanner(bluetoothAdapter).discoverPeripherals(
+//                    rejectRequestAddresses,
+//                    SignalboyGattAttributes.OUTPUT_SERVICE_UUID,
+//                    SCAN_PERIOD_IN_MILLIS,
+//                    true
+//                )
+//                Log.d(TAG, "Discovered devices (matching set filters): $devices")
+//
+//                val device = devices.firstOrNull() ?: throw NoCompatiblePeripheralDiscovered(
+//                    "Cannot connect: No peripheral matching set filters found during scan."
+//                )
+
+                // DeviceDiscoveryManager will try to discover the Signalboy device:
+                // As a side-effect (on success) the client passed for discovery will also
+                // already be connected to the discovered device.
+                val device = with(strategy.makeDeviceDiscoveryManager()) {
+                    val discoveryFilter = DeviceDiscoveryManager.DiscoveryFilter.Builder()
+                        .setAdvertisedServiceUuid(SignalboyGattAttributes.OUTPUT_SERVICE_UUID)
+                        .setAddressBlacklistGetter(getRejectRequestAddresses)
+                        .setGattSignature(SignalboyGattAttributes.allServices)
+                        .build()
+                    discoverAndConnect(client, discoveryFilter)
+                }
+
+                // Client is connected.
                 val deviceInformation = SignalboyDeviceInformation(
                     device.getNameOrDefault(""),
                     String(
@@ -231,39 +323,6 @@ class SignalboyService : LifecycleService() {
         }
     }
 
-    /**
-     * This is the synchronous variant of `sendEvent`.
-     */
-    fun trySendEvent() {
-        scope.launch { sendEvent() }
-    }
-
-    suspend fun sendEvent() {
-        val fireDateTimestamp = now() + configuration.normalizationDelay
-
-        val isSynced = when (val state = state) {
-            is State.Connected -> state.isSynced
-            else -> return
-        }
-
-        if (isSynced) {
-            val data = fireDateTimestamp.toUInt().toByteArrayLE()
-            client.writeGattCharacteristicAsync(TargetTimestampCharacteristic, data, false)
-        } else {
-            // Fallback to unsynced method.
-            Log.w(
-                TAG, "Falling back to unsynced signaling of event as connected peripheral is " +
-                        "not synced. Timing will be inaccurate."
-            )
-            delay(fireDateTimestamp - now())
-            client.writeGattCharacteristicAsync(
-                TriggerTimerCharacteristic,
-                byteArrayOf(0x01),
-                false
-            )
-        }
-    }
-
     private suspend fun disconnectFromPeripheralAsync(disconnectCause: Throwable?) {
         try {
             connectionOptionsSubscription?.cancel()
@@ -281,7 +340,7 @@ class SignalboyService : LifecycleService() {
             throw err
         } finally {
             try {
-                client.disconnectAsync()
+                client.disconnect()
             } catch (err: Throwable) {
                 Log.v(
                     TAG,
@@ -355,7 +414,7 @@ class SignalboyService : LifecycleService() {
         if (connectionOptions.hasRejectRequest) {
             if (client.state is ClientState.Connected) {
                 val address =
-                    (client.state as de.kishorrana.signalboy_android.service.client.State.Connected)
+                    (client.state as ClientState.Connected)
                         .session.device.address
                 rejectRequests[address] = RejectRequest(address, Date())
 
@@ -395,52 +454,9 @@ class SignalboyService : LifecycleService() {
      *
      * @return The job that performs the supervision of the service's connection-state.
      */
-    private fun CoroutineScope.launchConnectionSupervising(): Job =
-        launch {
-            suspend fun connect(reconnectAttempt: Int = 0) {
-                // Backoff strategy
-                val delayMillis: Long? = when (reconnectAttempt) {
-                    0 -> null
-                    1 -> 1 * 1_000L
-                    2 -> 5 * 1_000L
-                    3 -> 20 * 1_000L
-                    else -> 3 * MIN_IN_MILLISECONDS
-                }
-                if (delayMillis != null) {
-                    Log.i(
-                        TAG,
-                        "Will launch next connection attempt in ${delayMillis / 1_000}s (backoff-strategy)..."
-                    )
-                    delay(delayMillis)
-                }
-
-                try {
-                    connectToPeripheralAsync()
-                } catch (cancellation: CancellationException) {
-                    throw cancellation  // Cancel this job by user-request.
-                } catch (err: Throwable) {
-                    Log.w(
-                        TAG,
-                        "Connection attempt failed (reconnectAttempt=$reconnectAttempt) due to error:",
-                        err
-                    )
-                    connect(reconnectAttempt + 1)
-                }
-            }
-
-            suspend fun reconnectIfNeeded(state: State) {
-                // Reconnect if connection was dropped due to an error.
-                val disconnectCause = (state as? State.Disconnected)?.cause
-                if (disconnectCause != null) {
-                    Log.w(TAG, "Connection lost due to error:", disconnectCause)
-                    connect(1)
-                }
-            }
-
-            connect()
-            latestState
-                .collect { state -> reconnectIfNeeded(state) }
-        }
+    private fun CoroutineScope.launchConnectionSupervising(): Job = launch {
+        connectionSupervisingManager.superviseConnection()
+    }
 
     @SuppressLint("MissingPermission")
     private fun BluetoothDevice.getNameOrDefault(defaultValue: String) = runCatching { name }
@@ -466,6 +482,11 @@ class SignalboyService : LifecycleService() {
             syncState is SyncState.Synced
         )
     }
+
+    private fun makeCompanionDeviceManagerFacade(context: Context) = CompanionDeviceManagerFacade(
+        bluetoothAdapter,
+        OriginAwareCompanionDeviceManager.instantiate(context)
+    )
     //endregion
 
     @Parcelize
@@ -505,17 +526,44 @@ class SignalboyService : LifecycleService() {
         fun getService(): SignalboyService = this@SignalboyService
     }
 
-    sealed interface State {
-        data class Disconnected(val cause: Throwable? = null) : State
-        object Connecting : State
-        data class Connected(
-            val deviceInformation: SignalboyDeviceInformation,
-            val isSynced: Boolean
-        ) : State
+    private sealed class ConnectionStrategy {
+        abstract fun makeDeviceDiscoveryManager(): DeviceDiscoveryManager
+
+        /**
+         * A connection strategy, that tries to discover and connect to the Signalboy-Peripheral
+         * without requiring user-interaction (headless-mode).
+         */
+        data class DefaultConnectionStrategy(
+            val bluetoothAdapter: BluetoothAdapter,
+            val companionDeviceManagerFacade: CompanionDeviceManagerFacade
+        ) : ConnectionStrategy() {
+            override fun makeDeviceDiscoveryManager() = DeviceDiscoveryManager(
+                bluetoothAdapter,
+                companionDeviceManagerFacade,
+                null
+            )
+        }
+
+        /**
+         * A connection strategy, that may trigger user-interaction (e.g. device selection dialog,
+         * or other activities) when required.
+         */
+        data class UserInteractionConnectionStrategy(
+            val bluetoothAdapter: BluetoothAdapter,
+            val companionDeviceManagerFacade: CompanionDeviceManagerFacade,
+            val activityResultProxy: ActivityResultProxy
+        ) : ConnectionStrategy() {
+            override fun makeDeviceDiscoveryManager() = DeviceDiscoveryManager(
+                bluetoothAdapter,
+                companionDeviceManagerFacade,
+                activityResultProxy
+            )
+        }
     }
 
     companion object {
         const val EXTRA_CONFIGURATION = "EXTRA_CONFIGURATION"
+        const val TAG_FRAGMENT_ASSOCIATE = "FRAGMENT_ASSOCIATE"
 
         @JvmStatic
         fun getDefaultAdapter(context: Context): BluetoothAdapter =
@@ -527,5 +575,19 @@ class SignalboyService : LifecycleService() {
             bluetoothAdapter: BluetoothAdapter
         ): SignalboyPrerequisitesHelper.PrerequisitesResult =
             SignalboyPrerequisitesHelper.verifyPrerequisites(context, bluetoothAdapter)
+
+        @JvmStatic
+        fun injectAssociateFragment(fragmentManager: FragmentManager): AssociateFragment {
+            check(Looper.myLooper() == Looper.getMainLooper()) {
+                "Must be run on Main-thread."
+            }
+
+            val fragment = AssociateFragment()
+            fragmentManager
+                .beginTransaction()
+                .add(fragment, TAG_FRAGMENT_ASSOCIATE)
+                .commit()
+            return fragment
+        }
     }
 }

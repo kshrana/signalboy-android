@@ -14,6 +14,7 @@ import androidx.activity.result.ActivityResultRegistry
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.withTimeout
 import java.util.regex.Pattern
 
 private const val TAG = "CompanionDeviceController"
@@ -105,8 +106,9 @@ class CompanionDeviceController(
             }, null
         )
 
-        // TODO: Implement timeout cancellation
-        return semaphore.receive().getOrThrow()
+        return withTimeout(20_000L) {
+            semaphore.receive().getOrThrow()
+        }
     }
 
     fun clearAssociations() = deviceManager.associations

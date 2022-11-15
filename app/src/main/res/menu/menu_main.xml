@@ -3,8 +3,13 @@
     xmlns:tools="http://schemas.android.com/tools"
     tools:context="com.example.signalboycentral.MainActivity">
     <item
-        android:id="@+id/action_settings"
+        android:id="@+id/action_refresh"
         android:orderInCategory="100"
+        android:title="Refresh"
+        app:showAsAction="never" />
+    <item
+        android:id="@+id/action_companion_devices"
+        android:orderInCategory="110"
         android:title="@string/action_device_management"
         app:showAsAction="never" />
 </menu>

@@ -13,26 +13,25 @@ import android.os.IBinder
 import android.util.Log
 import android.view.Menu
 import android.view.MenuItem
+import android.widget.Toast
 import androidx.annotation.DrawableRes
 import androidx.annotation.IdRes
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.core.view.isVisible
 import androidx.lifecycle.lifecycleScope
 import com.example.signalboycentral.databinding.ActivityMainBinding
 import com.google.android.material.shape.ShapeAppearanceModel
 import com.google.android.material.snackbar.Snackbar
-import de.kishorrana.signalboy_android.service.AlreadyConnectingException
-import de.kishorrana.signalboy_android.service.BluetoothDisabledException
-import de.kishorrana.signalboy_android.service.NoCompatiblePeripheralDiscovered
-import de.kishorrana.signalboy_android.service.SignalboyService
-import de.kishorrana.signalboy_android.service.SignalboyService.State
+import de.kishorrana.signalboy_android.service.*
 import de.kishorrana.signalboy_android.service.client.ConnectionTimeoutException
 import de.kishorrana.signalboy_android.service.client.NoConnectionAttemptsLeftException
 import de.kishorrana.signalboy_android.service.scanner.AlreadyScanningException
 import de.kishorrana.signalboy_android.service.scanner.BluetoothLeScanFailed
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 
 private const val TAG = "MainActivity"
@@ -63,6 +62,16 @@ class MainActivity : AppCompatActivity(), ActivityCompat.OnRequestPermissionsRes
             signalboyService = (service as SignalboyService.LocalBinder).getService().apply {
                 onConnectionStateUpdateListener = onStateUpdateListener
             }
+            // Manually trigger connect, when service is started and `autostart`-option disabled.
+//                .also { signalboyService ->
+//                    lifecycleScope.launch {
+//                        when (signalboyService.state) {
+//                            is State.Disconnected -> signalboyService.connectToPeripheralAsync()
+//                            else -> { /* no-op */
+//                            }
+//                        }
+//                    }
+//                }
 
             updateView()
         }
@@ -72,12 +81,14 @@ class MainActivity : AppCompatActivity(), ActivityCompat.OnRequestPermissionsRes
             // unexpectedly disconnected -- that is, its process crashed.
             Log.e(TAG, "onServiceDisconnected")
             signalboyService = null
+
+            updateView()
         }
     }
 
     private val onStateUpdateListener = SignalboyService.OnConnectionStateUpdateListener {
         // Check for errors...
-        (it as? State.Disconnected)?.cause?.let { err ->
+        (it as? SignalboyMediator.State.Disconnected)?.cause?.let { err ->
             onConnectionError(err)
         }
 
@@ -86,6 +97,7 @@ class MainActivity : AppCompatActivity(), ActivityCompat.OnRequestPermissionsRes
 
     private val pendingPermissionRequests = mutableListOf<Int>()
 
+    private val deferredUserInteractionRequestResults = mutableListOf<Job>()
     private var testing: Job? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -108,6 +120,52 @@ class MainActivity : AppCompatActivity(), ActivityCompat.OnRequestPermissionsRes
                     onDiscoveryModeButtonChecked(checkedId)
                 }
             }
+            buttonResolveUserInteractionRequest.apply {
+                setOnClickListener {
+                    lifecycleScope.launch {
+                        val userInteractionRequestResolving =
+                            checkNotNull(signalboyService)
+                                .let { signalboyService ->
+                                    async {
+                                        signalboyService.resolveUserInteractionRequest(
+                                            this@MainActivity,
+                                            SignalboyService.injectAssociateFragment(fragmentManager)
+                                        )
+                                    }.also {
+                                        deferredUserInteractionRequestResults.add(it)
+                                        updateView()
+                                    }
+                                }
+
+                        userInteractionRequestResolving.await()
+                            .also { result ->
+                                Log.d(
+                                    TAG, "Finished Job `userInteractionRequestResolving`" +
+                                            " with result: $result"
+                                )
+                            }
+                            .also { result ->
+                                Toast
+                                    .makeText(
+                                        this@MainActivity,
+                                        if (result.getOrNull() != null) {
+                                            "Finished Job `userInteractionRequestResolving` successfully."
+                                        } else {
+                                            "Failed Job `userInteractionRequestResolving` due to error: " +
+                                                    result.exceptionOrNull()!!
+                                        },
+                                        if (result.isSuccess) {
+                                            Toast.LENGTH_SHORT
+                                        } else {
+                                            Toast.LENGTH_LONG
+                                        }
+                                    )
+                                    .show()
+                            }
+                        updateView()
+                    }
+                }
+            }
 
             buttonSync.setOnClickListener { signalboyService!!.tryTriggerSync() }
             buttonTest.apply {
@@ -125,7 +183,6 @@ class MainActivity : AppCompatActivity(), ActivityCompat.OnRequestPermissionsRes
             }
         }
 
-
         updateView()
     }
 
@@ -133,10 +190,11 @@ class MainActivity : AppCompatActivity(), ActivityCompat.OnRequestPermissionsRes
     override fun onStart() {
         super.onStart()
 
-//        if (!_onceToken) {
-//            onFabClicked()
-//            _onceToken = true
-//        }
+        // FIXME: DO NOT COMMIT
+        if (!_onceToken) {
+            onFabClicked()
+            _onceToken = true
+        }
     }
 
 //    override fun onStop() {
@@ -156,7 +214,8 @@ class MainActivity : AppCompatActivity(), ActivityCompat.OnRequestPermissionsRes
         // automatically handle clicks on the Home/Up button, so long
         // as you specify a parent activity in AndroidManifest.xml.
         return when (item.itemId) {
-            R.id.action_settings -> true.also {
+            R.id.action_refresh -> true.also { updateView() }
+            R.id.action_companion_devices -> true.also {
                 startActivity(Intent(this, DeviceManagementActivity::class.java))
             }
             else -> super.onOptionsItemSelected(item)
@@ -281,6 +340,7 @@ class MainActivity : AppCompatActivity(), ActivityCompat.OnRequestPermissionsRes
     private fun updateView() {
         updateBTStatusIcon()
         updateFab()
+        updateResolveUserInteractionRequestWidgets()
     }
 
     private fun updateBTStatusIcon() {
@@ -294,19 +354,19 @@ class MainActivity : AppCompatActivity(), ActivityCompat.OnRequestPermissionsRes
         }
 
         when (val connectionState = signalboyService?.state) {
-            is State.Disconnected -> {
+            is SignalboyMediator.State.Disconnected -> {
                 binding.contentMain.textPrimary.text = "Disconnected"
                 binding.contentMain.textSecondary.text = "Cause: ${connectionState.cause}"
                 setImageViewDrawable(R.drawable.baseline_bluetooth_black_24dp)
             }
 
-            is State.Connecting -> {
+            is SignalboyMediator.State.Connecting -> {
                 binding.contentMain.textPrimary.text = "Connecting"
                 binding.contentMain.textSecondary.text = ""
                 setImageViewDrawable(R.drawable.baseline_bluetooth_searching_black_24dp)
             }
 
-            is State.Connected -> {
+            is SignalboyMediator.State.Connected -> {
                 val (deviceInformation, isSynced) = connectionState
 
                 binding.contentMain.textPrimary.text = "Connected"
@@ -350,9 +410,22 @@ class MainActivity : AppCompatActivity(), ActivityCompat.OnRequestPermissionsRes
         }
     }
 
+    private fun updateResolveUserInteractionRequestWidgets() {
+        with(binding.contentMain) {
+            buttonResolveUserInteractionRequest.isEnabled =
+                signalboyService?.hasUserInteractionRequest == true
+            progressIndicatorResolveUserInteractionRequest.isVisible =
+                deferredUserInteractionRequestResults
+                    .any { it.isActive }
+        }
+    }
+
     private fun onFabClicked() {
         if (signalboyService == null) {
-            startPermissionRequests()
+            // TODO: Restore scanning functionality
+//            startPermissionRequests()
+
+            startSignalboyService()
         } else {
             stopSignalboyService()
         }
@@ -480,8 +553,13 @@ class MainActivity : AppCompatActivity(), ActivityCompat.OnRequestPermissionsRes
     }
 
     private fun startSignalboyService() {
+        val config = SignalboyService.Configuration.Default
+//            SignalboyService.Configuration(
+//                normalizationDelay = 100L,
+//                isAutoReconnectEnabled = false
+//            )
         Intent(this, SignalboyService::class.java)
-            .putExtra(SignalboyService.EXTRA_CONFIGURATION, SignalboyService.Configuration.Default)
+            .putExtra(SignalboyService.EXTRA_CONFIGURATION, config)
             .also { intent ->
                 val result =
                     bindService(intent, signalboyServiceConnection, Context.BIND_AUTO_CREATE)

@@ -46,13 +46,6 @@
             android:text="Associate some device" />
 
         <Button
-            android:id="@+id/button_connect"
-            style="?attr/materialButtonOutlinedStyle"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Connect to previously associated device" />
-
-        <Button
             android:id="@+id/button_clear_associations"
             style="?attr/materialButtonOutlinedStyle"
             android:layout_width="match_parent"
