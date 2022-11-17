@@ -1,6 +1,8 @@
 package de.kishorrana.signalboy_android.service
 
+import android.annotation.SuppressLint
 import android.bluetooth.BluetoothAdapter
+import android.bluetooth.BluetoothDevice
 import android.content.Context
 import android.content.Intent
 import android.os.Binder
@@ -178,6 +180,7 @@ class SignalboyService : LifecycleService() {
                     (client.state as? ClientState.Connected)?.let(::requireSignalboyGattAttributes)
                 }
                 val deviceInformation = SignalboyDeviceInformation(
+                    device.getNameOrDefault(""),
                     String(
                         client.readGattCharacteristicAsync(HardwareRevisionCharacteristic),
                         StandardCharsets.US_ASCII
@@ -438,6 +441,10 @@ class SignalboyService : LifecycleService() {
             latestState
                 .collect { state -> reconnectIfNeeded(state) }
         }
+
+    @SuppressLint("MissingPermission")
+    private fun BluetoothDevice.getNameOrDefault(defaultValue: String) = runCatching { name }
+        .getOrDefault(defaultValue)
 
     /**
      * Returns `true`, if the Reject-Request is active (i.e. has not expired).

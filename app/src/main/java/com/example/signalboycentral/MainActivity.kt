@@ -312,6 +312,7 @@ class MainActivity : AppCompatActivity(), ActivityCompat.OnRequestPermissionsRes
                 binding.contentMain.textPrimary.text = "Connected"
                 binding.contentMain.textSecondary.text =
                     "• Device Information:" +
+                            "\n\t• local-name=${deviceInformation.localName}" +
                             "\n\t• hardware-revision=${deviceInformation.hardwareRevision}" +
                             "\n\t• software-revision=${deviceInformation.softwareRevision}" +
                             "\n• isSynced=$isSynced"
