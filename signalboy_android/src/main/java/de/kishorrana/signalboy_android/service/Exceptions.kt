@@ -9,6 +9,11 @@ class MissingRequiredRuntimePermissionException(
 
 class BluetoothDisabledException : IllegalStateException("Expects Bluetooth to be enabled.")
 
+class CompanionDeviceSetupNotSupportedException : IllegalStateException(
+    "uses-feature declaration for `PackageManager#FEATURE_COMPANION_DEVICE_SETUP` required" +
+            " (AndroidManifest)."
+)
+
 class NoCompatiblePeripheralDiscovered(message: String?) : IllegalStateException(message)
 
 class AlreadyConnectingException : IllegalStateException("Already connecting…")

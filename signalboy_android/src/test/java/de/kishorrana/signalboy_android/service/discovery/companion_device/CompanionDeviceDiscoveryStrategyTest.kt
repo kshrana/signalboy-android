@@ -6,6 +6,7 @@ import android.bluetooth.le.ScanResult
 import android.companion.CompanionDeviceManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import androidx.core.content.getSystemService
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -45,6 +46,8 @@ class CompanionDeviceDiscoveryStrategyTest {
     private lateinit var companionDeviceManager: CompanionDeviceManager
     private lateinit var shadowCompanionDeviceManager: ShadowCompanionDeviceManager
 
+    private lateinit var packageManager: PackageManager
+
     private lateinit var companionDeviceManagerFacade: CompanionDeviceManagerFacade
     private lateinit var client: FakeClient
     private lateinit var activityResultProxy: FakeActivityResultProxy
@@ -68,7 +71,13 @@ class CompanionDeviceDiscoveryStrategyTest {
         companionDeviceManager = context.getSystemService()!!
         shadowCompanionDeviceManager = shadowOf(companionDeviceManager)
 
+        packageManager = context.packageManager.apply {
+            shadowOf(this)
+                .setSystemFeature(PackageManager.FEATURE_COMPANION_DEVICE_SETUP, true)
+        }
+
         companionDeviceManagerFacade = CompanionDeviceManagerFacade(
+            packageManager,
             bluetoothAdapter,
             makeOriginAwareCompanionDeviceManagerStub(companionDeviceManager)
         )

@@ -9,7 +9,7 @@ Some key features are:
 Signalboy won't function right now (s. [Android Permissions](#android-permissions)). Its function
 will be restored by completing the following tasks:
 - [ ] Implement CompanionDeviceManager API as alternative discovery strategy
-  - [ ] Implement check or take some precautions to ensure for the 
+  - [x] Implement check or take some precautions to ensure for the 
     uses-feature `PackageManager#FEATURE_COMPANION_DEVICE_SETUP` declaration, that 
     the Companion Manager API expects.
   - [ ] Public method for clearing associations made by Signalboy

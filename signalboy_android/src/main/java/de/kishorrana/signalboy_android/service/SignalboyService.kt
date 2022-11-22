@@ -490,6 +490,7 @@ class SignalboyService : LifecycleService(), SignalboyMediator {
     }
 
     private fun makeCompanionDeviceManagerFacade(context: Context) = CompanionDeviceManagerFacade(
+        context.packageManager,
         bluetoothAdapter,
         OriginAwareCompanionDeviceManager.instantiate(context)
     )

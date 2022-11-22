@@ -7,20 +7,25 @@ import android.bluetooth.le.ScanResult
 import android.companion.AssociationRequest
 import android.companion.BluetoothLeDeviceFilter
 import android.companion.CompanionDeviceManager
-import android.content.Context
 import android.content.Intent
 import android.content.IntentSender
+import android.content.pm.PackageManager
 import android.os.Parcelable
 import android.util.Log
-import androidx.core.content.getSystemService
 import de.kishorrana.signalboy_android.service.BluetoothDisabledException
+import de.kishorrana.signalboy_android.service.CompanionDeviceSetupNotSupportedException
 import de.kishorrana.signalboy_android.service.discovery.ActivityResultProxy
 
 internal class CompanionDeviceManagerFacade(
+    private val packageManager: PackageManager,
     private val bluetoothAdapter: BluetoothAdapter,
     private val originAwareCompanionDeviceManager: OriginAwareCompanionDeviceManager
 ) {
-    val associations: List<String> get() = companionDeviceManager.associations
+    val associations: List<String>
+        get() {
+            ensureHasCompanionDeviceSetupFeature()
+            return companionDeviceManager.associations
+        }
 
     private val companionDeviceManager = originAwareCompanionDeviceManager.wrappedValue
 
@@ -47,6 +52,7 @@ internal class CompanionDeviceManagerFacade(
         onFinish: (Result<BluetoothDevice>) -> Unit,
         addressPredicate: (String) -> Boolean
     ) {
+        ensureHasCompanionDeviceSetupFeature()
         originAwareCompanionDeviceManager.ensureCanAssociate()
         if (!bluetoothAdapter.isEnabled) throw BluetoothDisabledException()
 
@@ -59,7 +65,6 @@ internal class CompanionDeviceManagerFacade(
             TAG,
             "requestAssociation(): will call CompanionDeviceDiscoveryStrategy.associate()..."
         )
-        // TODO: Calling this API requires a uses-feature PackageManager.FEATURE_COMPANION_DEVICE_SETUP declaration in the manifest
         companionDeviceManager.associate(
             associationRequest,
             object : CompanionDeviceManager.Callback() {
@@ -127,33 +132,21 @@ internal class CompanionDeviceManagerFacade(
 
     private fun clearAssociations(vararg excluding: String) = associations
         .filterNot(excluding::contains)
-        .forEach { companionDeviceManager.disassociate(it) }
+        .forEach { disassociate(it) }
 
+    private fun disassociate(deviceMacAddress: String) {
+        ensureHasCompanionDeviceSetupFeature()
+        companionDeviceManager
+            .disassociate(deviceMacAddress)
+    }
+
+    private fun ensureHasCompanionDeviceSetupFeature() {
+        if (!packageManager.hasSystemFeature(PackageManager.FEATURE_COMPANION_DEVICE_SETUP)) {
+            throw CompanionDeviceSetupNotSupportedException()
+        }
+    }
 
     companion object {
         private const val TAG = "CompanionDeviceManagerFacade"
     }
 }
-
-// TODO: Move region's content to own file.
-//region OriginAwareCompanionDeviceManager
-internal open class OriginAwareCompanionDeviceManager private constructor(
-    private val origin: Context,
-    open val wrappedValue: CompanionDeviceManager
-) {
-    open fun ensureCanAssociate() {
-        check(origin is Activity) {
-            "Context is required to be an instance of `Activity`." +
-                    " Older Android implementation cast the context" +
-                    " (which was used to acquire the CompanionDeviceManager)" +
-                    " to `Activity` when calling [CompanionDeviceManager.associate()]."
-        }
-    }
-
-    companion object {
-        fun instantiate(context: Context) = with(context) {
-            OriginAwareCompanionDeviceManager(this, getSystemService()!!)
-        }
-    }
-}
-//endregion
