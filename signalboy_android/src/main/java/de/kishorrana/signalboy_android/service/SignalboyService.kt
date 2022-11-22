@@ -44,8 +44,6 @@ import kotlin.coroutines.CoroutineContext
 import de.kishorrana.signalboy_android.service.client.State as ClientState
 import de.kishorrana.signalboy_android.service.sync.State as SyncState
 
-private const val TAG = "SignalboyService"
-
 class SignalboyService : LifecycleService(), SignalboyMediator {
     var onConnectionStateUpdateListener: OnConnectionStateUpdateListener? = null
     override val state: State
@@ -213,6 +211,14 @@ class SignalboyService : LifecycleService(), SignalboyMediator {
         }
     }
 
+    /**
+     * Resolve user interaction request
+     *
+     * @param activity Activity used for resolving Companion Device Manager with a Context of
+       type `Activity` (as detailed by [OriginAwareCompanionDeviceManager.ensureCanAssociate]).
+     * @param userInteractionProxy
+     * @return
+     */
     suspend fun resolveUserInteractionRequest(
         activity: Activity,
         userInteractionProxy: ActivityResultProxy
@@ -562,6 +568,7 @@ class SignalboyService : LifecycleService(), SignalboyMediator {
     }
 
     companion object {
+        private const val TAG = "SignalboyService"
         const val EXTRA_CONFIGURATION = "EXTRA_CONFIGURATION"
         const val TAG_FRAGMENT_ASSOCIATE = "FRAGMENT_ASSOCIATE"
 
