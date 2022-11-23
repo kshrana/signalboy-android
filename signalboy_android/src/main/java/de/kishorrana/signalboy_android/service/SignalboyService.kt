@@ -573,6 +573,14 @@ class SignalboyService : LifecycleService(), SignalboyMediator {
         const val EXTRA_CONFIGURATION = "EXTRA_CONFIGURATION"
         const val TAG_FRAGMENT_ASSOCIATE = "FRAGMENT_ASSOCIATE"
 
+        private val applicableDeviceDiscoveryStrategies
+            // TODO: Implement flow, that decides whether to return with CompanionDevice- or Scanner-
+            //   DiscoveryStrategy, or even both.
+            get() = listOf(
+//                SignalboyPrerequisitesHelper.DeviceDiscoveryStrategy.ScanDeviceDiscoveryStrategy,
+                SignalboyPrerequisitesHelper.DeviceDiscoveryStrategy.CompanionDeviceDiscoveryStrategy,
+            )
+
         @JvmStatic
         fun getDefaultAdapter(context: Context): BluetoothAdapter =
             ContextHelper.getBluetoothAdapter(context)
@@ -582,7 +590,11 @@ class SignalboyService : LifecycleService(), SignalboyMediator {
             context: Context,
             bluetoothAdapter: BluetoothAdapter
         ): SignalboyPrerequisitesHelper.PrerequisitesResult =
-            SignalboyPrerequisitesHelper.verifyPrerequisites(context, bluetoothAdapter)
+            SignalboyPrerequisitesHelper.verifyPrerequisites(
+                context,
+                bluetoothAdapter,
+                applicableDeviceDiscoveryStrategies
+            )
 
         @JvmStatic
         fun injectAssociateFragment(fragmentManager: FragmentManager): AssociateFragment {

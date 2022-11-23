@@ -1,11 +1,16 @@
 package de.kishorrana.signalboy_android.service.discovery.companion_device
 
+import android.Manifest
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothGattService
 import android.companion.BluetoothLeDeviceFilter
+import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Build
 import android.util.Log
 import com.tinder.StateMachine
+import de.kishorrana.signalboy_android.service.PrerequisitesNode
 import de.kishorrana.signalboy_android.service.client.Client
 import de.kishorrana.signalboy_android.service.discovery.ActivityResultProxy
 import de.kishorrana.signalboy_android.service.discovery.DeviceDiscoveryStrategy
@@ -23,7 +28,7 @@ private typealias TransitionTo = StateMachine.Graph.State.TransitionTo<State, Si
 internal class CompanionDeviceDiscoveryStrategy(
     private val bluetoothAdapter: BluetoothAdapter,
     private val companionDeviceManagerFacade: CompanionDeviceManagerFacade,
-    private val associationRequestDeviceFilter: BluetoothLeDeviceFilter?,
+    private val associationRequestDeviceFilter: BluetoothLeDeviceFilter? = null,
     private val addressPredicate: (String) -> Boolean = { true },
     private val servicesPredicate: (List<BluetoothGattService>) -> Boolean = { true }
 ) : DeviceDiscoveryStrategy {
@@ -59,7 +64,7 @@ internal class CompanionDeviceDiscoveryStrategy(
                     require(client.state is de.kishorrana.signalboy_android.service.client.State.Disconnected)
 
                     // TODO: Might implement our own bookkeeping when establishing associations
-                    // to ensure, that we're only dealing with expected associations here.
+                    //   to ensure, that we're only dealing with expected associations here.
                     val address = companionDeviceManagerFacade.associations
                         .firstOrNull { address ->
                             addressPredicate(address).also { predicate ->
@@ -290,6 +295,14 @@ internal class CompanionDeviceDiscoveryStrategy(
                 // Timer did timeout.
                 handleEvent(Event.OnTimeout)
             }
+        }
+    }
+
+    companion object {
+        internal fun asPrerequisitesNode(
+            packageManager: PackageManager
+        ) = PrerequisitesNode { visitor ->
+            CompanionDeviceManagerFacade.asPrerequisitesNode(packageManager).accept(visitor)
         }
     }
 }

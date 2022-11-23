@@ -27,8 +27,8 @@ internal class DeviceDiscoveryManager(
     }
 
     private fun getStrategy(filter: DiscoveryFilter): DeviceDiscoveryStrategy {
-        // TODO: Implement flow that decides whether to return with CompanionDevice- or Scanner-
-        // DiscoveryStrategy.
+        // TODO: Implement flow, that decides whether to return with CompanionDevice- or Scanner-
+        //   DiscoveryStrategy.
         return makeCompanionDeviceDiscoveryStrategy(filter)
     }
 

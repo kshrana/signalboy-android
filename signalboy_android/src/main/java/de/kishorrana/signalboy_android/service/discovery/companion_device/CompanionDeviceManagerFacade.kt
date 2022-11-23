@@ -14,6 +14,7 @@ import android.os.Parcelable
 import android.util.Log
 import de.kishorrana.signalboy_android.service.BluetoothDisabledException
 import de.kishorrana.signalboy_android.service.CompanionDeviceSetupNotSupportedException
+import de.kishorrana.signalboy_android.service.PrerequisitesNode
 import de.kishorrana.signalboy_android.service.discovery.ActivityResultProxy
 
 internal class CompanionDeviceManagerFacade(
@@ -148,5 +149,18 @@ internal class CompanionDeviceManagerFacade(
 
     companion object {
         private const val TAG = "CompanionDeviceManagerFacade"
+
+        internal fun asPrerequisitesNode(packageManager: PackageManager) =
+            PrerequisitesNode { visitor ->
+                PackageManager.FEATURE_COMPANION_DEVICE_SETUP.let {
+                    if (!packageManager.hasSystemFeature(it)) {
+                        visitor.addUnmetUsesFeatureDeclarations(
+                            listOf(
+                                it
+                            )
+                        )
+                    }
+                }
+            }
     }
 }
