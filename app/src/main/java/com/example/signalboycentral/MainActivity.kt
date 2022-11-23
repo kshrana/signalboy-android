@@ -191,10 +191,10 @@ class MainActivity : AppCompatActivity(), ActivityCompat.OnRequestPermissionsRes
         super.onStart()
 
         // FIXME: DO NOT COMMIT
-        if (!_onceToken) {
-            onFabClicked()
-            _onceToken = true
-        }
+//        if (!_onceToken) {
+//            onFabClicked()
+//            _onceToken = true
+//        }
     }
 
 //    override fun onStop() {
