@@ -16,7 +16,7 @@ import androidx.lifecycle.LifecycleService
 import androidx.lifecycle.lifecycleScope
 import de.kishorrana.signalboy_android.MIN_IN_MILLISECONDS
 import de.kishorrana.signalboy_android.REJECT_CONNECTION_DURATION_IN_MILLIS
-import de.kishorrana.signalboy_android.service.SignalboyMediator.State
+import de.kishorrana.signalboy_android.service.ISignalboyService.State
 import de.kishorrana.signalboy_android.service.client.Client
 import de.kishorrana.signalboy_android.service.client.DefaultClient
 import de.kishorrana.signalboy_android.service.client.endpoint.readGattCharacteristicAsync
@@ -44,12 +44,12 @@ import kotlin.coroutines.CoroutineContext
 import de.kishorrana.signalboy_android.service.client.State as ClientState
 import de.kishorrana.signalboy_android.service.sync.State as SyncState
 
-class SignalboyService : LifecycleService(), SignalboyMediator {
+class SignalboyService : LifecycleService(), ISignalboyService {
     var onConnectionStateUpdateListener: OnConnectionStateUpdateListener? = null
     override val state: State
         get() = latestState.value
 
-    val hasUserInteractionRequest get() = connectionSupervisingManager.hasUserInteractionRequest
+    val hasUserInteractionRequest get() = connectionSupervisingManager.hasAnyOpenUserInteractionRequest
 
     private val _latestState = MutableStateFlow<State>(State.Disconnected(null))
     override val latestState: StateFlow<State> by lazy {
@@ -89,7 +89,11 @@ class SignalboyService : LifecycleService(), SignalboyMediator {
     private lateinit var configuration: Configuration
 
     private val client by lazy {
-        DefaultClient(this, parentJob = scope.coroutineContext.job)
+        DefaultClient(
+            this,
+            getDefaultAdapter(this),
+            parentJob = scope.coroutineContext.job
+        )
     }
     private val syncManager by lazy { SyncManager() }
     private val connectionSupervisingManager by lazy {

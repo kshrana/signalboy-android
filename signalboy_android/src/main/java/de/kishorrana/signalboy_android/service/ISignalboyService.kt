@@ -5,7 +5,7 @@ import de.kishorrana.signalboy_android.service.discovery.ActivityResultProxy
 import de.kishorrana.signalboy_android.service.gatt.SignalboyDeviceInformation
 import kotlinx.coroutines.flow.StateFlow
 
-interface SignalboyMediator {
+interface ISignalboyService {
     val state: State
     val latestState: StateFlow<State>
 

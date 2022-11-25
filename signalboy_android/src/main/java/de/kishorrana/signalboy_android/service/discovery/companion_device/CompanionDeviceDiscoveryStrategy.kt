@@ -1,15 +1,13 @@
 package de.kishorrana.signalboy_android.service.discovery.companion_device
 
-import android.Manifest
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothGattService
 import android.companion.BluetoothLeDeviceFilter
-import android.content.Context
 import android.content.pm.PackageManager
-import android.os.Build
 import android.util.Log
 import com.tinder.StateMachine
+import de.kishorrana.signalboy_android.service.BluetoothDisabledException
 import de.kishorrana.signalboy_android.service.PrerequisitesNode
 import de.kishorrana.signalboy_android.service.client.Client
 import de.kishorrana.signalboy_android.service.discovery.ActivityResultProxy
@@ -127,8 +125,14 @@ internal class CompanionDeviceDiscoveryStrategy(
                 onExit { connecting.cancel() }
                 on<Event.OnDiscoveryRequest> { throw IllegalStateException(state = this) }
                 on<Event.OnConnectionAttemptFailed> { (reason) ->
-                    requestAssociationAndTransition { toState ->
-                        toState?.let { transitionTo(it) } ?: dontTransition()
+                    when (reason) {
+                        // Fail early
+                        is BluetoothDisabledException -> transitionTo(
+                            State.Idle(Result.failure(reason))
+                        )
+                        else -> requestAssociationAndTransition { toState ->
+                            toState?.let { transitionTo(it) } ?: dontTransition()
+                        }
                     }
                 }
                 on<Event.OnConnectionEstablished> { (services) ->
@@ -219,38 +223,34 @@ internal class CompanionDeviceDiscoveryStrategy(
 
         private fun connectGattAndTransition(
             device: BluetoothDevice,
-            transitionToState: (State?) -> TransitionTo
-        ): TransitionTo {
-            return transitionToState(
-                State.Connecting(
-                    device,
-                    parentScope.launch {
-                        val services = try {
-                            client.connect(
-                                device,
-                                retryCount = 3
-                            )
-                        } catch (exception: Exception) {
-                            if (exception !is CancellationException) {
-                                handleEvent(Event.OnConnectionAttemptFailed(exception))
-                            }
-                            return@launch
-                        }
-                        handleEvent(Event.OnConnectionEstablished(services))
+            transitionTo: (State?) -> TransitionTo
+        ) = transitionTo(
+            State.Connecting(
+                device,
+                parentScope.launch {
+                    val services = try {
+                        client.connect(
+                            device,
+                            retryCount = 1
+                        )
+                    } catch (exception: Exception) {
+                        handleEvent(Event.OnConnectionAttemptFailed(exception))
+                        return@launch
                     }
-                )
+                    handleEvent(Event.OnConnectionEstablished(services))
+                }
             )
-        }
+        )
 
-        private fun requestAssociationAndTransition(transitionToState: (State?) -> TransitionTo) =
+        private fun requestAssociationAndTransition(transitionTo: (State?) -> TransitionTo) =
             run {
                 try {
                     requestAssociationOrThrow()
                 } catch (exception: Exception) {
-                    return@run transitionToState(State.Idle(Result.failure(exception)))
+                    return@run transitionTo(State.Idle(Result.failure(exception)))
                 }
 
-                transitionToState(
+                transitionTo(
                     State.AssociationRequested(
                         parentScope.launchTimer(DISCOVERY_ATTEMPT_TIMEOUT_MS)
                     )
@@ -259,8 +259,8 @@ internal class CompanionDeviceDiscoveryStrategy(
 
         private fun State.Connecting.disconnectAndTransition(
             disconnectReason: DisconnectReason,
-            transitionToState: (State?) -> TransitionTo
-        ) = transitionToState(
+            transitionTo: (State?) -> TransitionTo
+        ) = transitionTo(
             State.Disconnecting(
                 device = device,
                 timer = parentScope.launchTimer(DISCONNECTING_ATTEMPT_TIMEOUT_MS),
@@ -273,13 +273,13 @@ internal class CompanionDeviceDiscoveryStrategy(
         )
 
         private fun State.Disconnecting.handleDisconnectAndTransition(
-            transitionToState: (State?) -> TransitionTo
+            transitionTo: (State?) -> TransitionTo
         ) = when (disconnectReason) {
             is DisconnectReason.RejectedDueToServicesFilter,
             is DisconnectReason.BadConnectionAttempt ->
-                requestAssociationAndTransition(transitionToState)
+                requestAssociationAndTransition(transitionTo)
             is DisconnectReason.Finished ->
-                transitionToState(
+                transitionTo(
                     State.Idle(
                         disconnectReason.error?.let { Result.failure(it) }
                             ?: Result.success(device))

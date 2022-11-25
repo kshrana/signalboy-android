@@ -1,12 +1,11 @@
 package de.kishorrana.signalboy_android.service.client
 
-import android.bluetooth.BluetoothDevice
-import android.bluetooth.BluetoothGattCallback
-import android.bluetooth.BluetoothProfile
+import android.bluetooth.*
 import android.content.Context
 import android.util.Log
 import com.tinder.StateMachine
 import de.kishorrana.signalboy_android.CONNECTION_ATTEMPT_TIMEOUT_IN_MILLIS
+import de.kishorrana.signalboy_android.service.BluetoothDisabledException
 import de.kishorrana.signalboy_android.service.MissingRequiredRuntimePermissionException
 import de.kishorrana.signalboy_android.service.gatt.GATT_STATUS_CONNECTION_TIMEOUT
 import de.kishorrana.signalboy_android.service.gatt.GATT_STATUS_SUCCESS
@@ -21,6 +20,7 @@ private typealias VoidCallback = () -> Unit
 
 internal class StateManager(
     private val context: Context,
+    private val bluetoothAdapter: BluetoothAdapter,
     private val bluetoothGattCallback: BluetoothGattCallback,
     private val scope: CoroutineScope
 ) {
@@ -174,10 +174,12 @@ internal class StateManager(
     }
 
     private fun connect(device: BluetoothDevice): Session {
-        try {
-            val gatt = device.connectGatt(context, false, bluetoothGattCallback)
-            return Session(device, gatt)
+        ensureCanConnect()
 
+        try {
+            val gatt: BluetoothGatt =
+                device.connectGatt(context, false, bluetoothGattCallback)
+            return Session(device, gatt)
         } catch (err: SecurityException) {
             throw MissingRequiredRuntimePermissionException(err)
         }
@@ -276,6 +278,12 @@ internal class StateManager(
             }
         } catch (err: TimeoutCancellationException) {
             onTimeout()
+        }
+    }
+
+    private fun ensureCanConnect() {
+        if (!bluetoothAdapter.isEnabled) {
+            throw BluetoothDisabledException()
         }
     }
 }

@@ -88,7 +88,7 @@ class MainActivity : AppCompatActivity(), ActivityCompat.OnRequestPermissionsRes
 
     private val onStateUpdateListener = SignalboyService.OnConnectionStateUpdateListener {
         // Check for errors...
-        (it as? SignalboyMediator.State.Disconnected)?.cause?.let { err ->
+        (it as? ISignalboyService.State.Disconnected)?.cause?.let { err ->
             onConnectionError(err)
         }
 
@@ -354,19 +354,19 @@ class MainActivity : AppCompatActivity(), ActivityCompat.OnRequestPermissionsRes
         }
 
         when (val connectionState = signalboyService?.state) {
-            is SignalboyMediator.State.Disconnected -> {
+            is ISignalboyService.State.Disconnected -> {
                 binding.contentMain.textPrimary.text = "Disconnected"
                 binding.contentMain.textSecondary.text = "Cause: ${connectionState.cause}"
                 setImageViewDrawable(R.drawable.baseline_bluetooth_black_24dp)
             }
 
-            is SignalboyMediator.State.Connecting -> {
+            is ISignalboyService.State.Connecting -> {
                 binding.contentMain.textPrimary.text = "Connecting"
                 binding.contentMain.textSecondary.text = ""
                 setImageViewDrawable(R.drawable.baseline_bluetooth_searching_black_24dp)
             }
 
-            is SignalboyMediator.State.Connected -> {
+            is ISignalboyService.State.Connected -> {
                 val (deviceInformation, isSynced) = connectionState
 
                 binding.contentMain.textPrimary.text = "Connected"

@@ -27,7 +27,11 @@ import java.util.*
 
 private const val TAG = "SignalboyClient"
 
-internal class DefaultClient(context: Context, parentJob: Job? = null) : Client {
+internal class DefaultClient(
+    context: Context,
+    bluetoothAdapter: BluetoothAdapter,
+    parentJob: Job? = null
+) : Client {
     // Reusing StateManager's state here.
     override val state: State
         get() = stateManager.state
@@ -39,7 +43,7 @@ internal class DefaultClient(context: Context, parentJob: Job? = null) : Client 
     )
 
     private val gattCallback = ClientBluetoothGattCallback(scope)
-    private val stateManager = StateManager(context, gattCallback, scope)
+    private val stateManager = StateManager(context, bluetoothAdapter, gattCallback, scope)
 
     /**
      * Channel is empty while no async-operation for BluetoothGatt is active.

@@ -1,7 +1,6 @@
 package de.kishorrana.signalboy_android.service
 
 import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.Deferred
 
 internal class InteractionRequest<T, R> {
     val canAcceptDependency get() = deferredDependency.isActive
@@ -12,26 +11,32 @@ internal class InteractionRequest<T, R> {
     private val deferredResult = CompletableDeferred<R>()
 
     suspend fun resumeAndAwaitResolving(dependency: T): R {
-        check(canAcceptDependency) { "Already received dependency." }
         check(!isResolved) { "Already resolved." }
+        check(deferredDependency.complete(dependency)) { "Already received dependency." }
 
-        deferredDependency.complete(dependency)
-
-        // Await result.
+        // Await result
         return deferredResult.await()
     }
 
-    suspend fun resolve(dependencyConsumer: suspend (Deferred<T>) -> R): Result<R> {
+    suspend fun waitForDependency() = deferredDependency.join()
+
+    suspend fun resolveUsingDependencyOrThrow(dependencyConsumer: suspend (T) -> R): R {
+        // Fail fast
         check(!isResolved) { "Already resolved." }
 
+        if (!deferredDependency.isCompleted) {
+            throw MissingDependencyException("Resolving failed due to missing dependency.")
+        }
+
         return try {
-            dependencyConsumer(deferredDependency)
+            // Should return immediately, as we asserted `deferredDependency.isCompleted`.
+            val dependency = deferredDependency.await()
+
+            dependencyConsumer(dependency)
                 .also(deferredResult::complete)
-                .let(Result.Companion::success)
         } catch (exception: Throwable) {
-            exception
-                .also(deferredResult::completeExceptionally)
-                .let(Result.Companion::failure)
+            deferredResult.completeExceptionally(exception)
+            throw exception
         }
     }
 
@@ -39,4 +44,6 @@ internal class InteractionRequest<T, R> {
         deferredDependency.cancel()
         deferredResult.cancel()
     }
+
+    class MissingDependencyException(message: String) : Exception(message)
 }

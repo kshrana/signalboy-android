@@ -3,8 +3,8 @@ package de.kishorrana.signalboy_android.service.connection_supervising
 import android.app.Activity
 import android.util.Log
 import de.kishorrana.signalboy_android.MIN_IN_MILLISECONDS
+import de.kishorrana.signalboy_android.service.ISignalboyService
 import de.kishorrana.signalboy_android.service.InteractionRequest
-import de.kishorrana.signalboy_android.service.SignalboyMediator
 import de.kishorrana.signalboy_android.service.discovery.ActivityResultProxy
 import de.kishorrana.signalboy_android.service.discovery.UserInteractionRequiredException
 import kotlinx.coroutines.*
@@ -14,9 +14,9 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.onCompletion
 
 internal class ConnectionSupervisingManager(
-    private val signalboyMediator: SignalboyMediator
+    private val signalboyService: ISignalboyService
 ) {
-    val hasUserInteractionRequest: Boolean
+    val hasAnyOpenUserInteractionRequest: Boolean
         get() = userInteractionRequest?.canAcceptDependency == true
 
     private var supervising: Job? = null
@@ -26,7 +26,7 @@ internal class ConnectionSupervisingManager(
         get() = recoverStrategy?.let { recoverStrategy ->
             when (recoverStrategy) {
                 is RecoverStrategy.DefaultRecoverStrategy -> null
-                is RecoverStrategy.UserInteractionRecoverStrategy -> recoverStrategy.request
+                is RecoverStrategy.UserInteractionRecoverStrategy -> recoverStrategy.userInteractionRequest
             }
         }
 
@@ -34,8 +34,8 @@ internal class ConnectionSupervisingManager(
         check(supervising?.isActive != true) { "Receiver is already supervising." }
 
         supervising = launch {
-            with(signalboyMediator) {
-                if (state is SignalboyMediator.State.Disconnected) {
+            with(signalboyService) {
+                if (state is ISignalboyService.State.Disconnected) {
                     connect()
                 }
                 latestState
@@ -49,9 +49,10 @@ internal class ConnectionSupervisingManager(
         activity: Activity,
         userInteractionProxy: ActivityResultProxy
     ): Result<Unit> = runCatching {
-        checkNotNull(userInteractionRequest).resumeAndAwaitResolving(
-            Pair(activity, userInteractionProxy)
-        )
+        checkNotNull(userInteractionRequest) { "No User Interaction Request available." }
+            .resumeAndAwaitResolving(
+                Pair(activity, userInteractionProxy)
+            )
     }
 
     private suspend fun connect(
@@ -85,7 +86,7 @@ internal class ConnectionSupervisingManager(
     private suspend fun connectOrRecoverStrategy(
         reconnectAttempt: Int = 0,
         recoverStrategy: RecoverStrategy = RecoverStrategy.DefaultRecoverStrategy(null)
-    ): RecoverStrategy? = coroutineScope {
+    ): RecoverStrategy? {
         fun continueWithNextAttempt(
             cause: Throwable?,
             recoverStrategy: RecoverStrategy
@@ -113,57 +114,58 @@ internal class ConnectionSupervisingManager(
                 }
                 try {
                     // Will fail when user-interaction is required.
-                    signalboyMediator.connectToPeripheral()
+                    signalboyService.connectToPeripheral()
                 } catch (exception: UserInteractionRequiredException) {
                     // Switch to User-Interaction Recover-Strategy.
-                    return@coroutineScope continueWithNextAttempt(
+                    return continueWithNextAttempt(
                         exception,
                         RecoverStrategy.UserInteractionRecoverStrategy(cause = exception)
                     )
                 } catch (exception: Exception) {
                     // Retain current recover strategy.
-                    return@coroutineScope continueWithNextAttempt(exception, recoverStrategy)
+                    return continueWithNextAttempt(exception, recoverStrategy)
                 }
             }
             is RecoverStrategy.UserInteractionRecoverStrategy -> {
-                val userInteractionRequest = recoverStrategy.request
+                val userInteractionRequest = recoverStrategy.userInteractionRequest
 
                 if (delayMillis > 0) {
                     Log.d(
                         TAG,
                         "Awaiting continuation for User-Interaction Recover-Strategy..." +
-                                " Will launch next (headless) connection attempt on timeout " +
-                                "in ${delayMillis / 1_000}s..."
+                                " Will launch next headless connection attempt when continuation" +
+                                " was not received (timeout in ${delayMillis / 1_000}s..."
                     )
                 }
 
-                val recoveryActionResult = userInteractionRequest.resolve { deferredPayload ->
-                    val payload = withTimeoutOrNull(delayMillis) { deferredPayload.await() }
-
-                    if (payload != null) {
-                        // Received dependency required for user-interaction:
-                        // This connection-attempt might trigger User Interaction Requests,
-                        // if necessary.
-                        val (activity, activityResultProxy) = payload
-                        signalboyMediator.connectToPeripheral(activity, activityResultProxy)
-                    } else {
-                        // Timeout occurred when awaiting the dependency required
-                        // for user-interaction:
-                        // Will fall back to headless connection-attempt.
-                        signalboyMediator.connectToPeripheral()
-                    }
+                withTimeoutOrNull(delayMillis) {
+                    userInteractionRequest.waitForDependency()
                 }
 
-                return@coroutineScope try {
-                    recoveryActionResult.getOrThrow().let {
-                        // Recovery action was successful (connection (re-)established).
-                        null
+                try {
+                    // Try to connect:
+                    //   * Either with user-interaction enabled (if dependencies received)…
+                    //   * or otherwise falling back to (regular) headless mode (no user-interaction)
+                    try {
+                        userInteractionRequest.resolveUsingDependencyOrThrow { dependency ->
+                            // Received dependency required for user-interaction:
+                            // The following connection-attempt might trigger (User-)Interaction,
+                            // if necessary.
+                            val (activity, activityResultProxy) = dependency
+                            signalboyService.connectToPeripheral(activity, activityResultProxy)
+                        }
+                    } catch (missingDependencyException: InteractionRequest.MissingDependencyException) {
+                        // Resolving the (User-)Interaction-Request was not successful, because
+                        // it did not receive the required dependency:
+                        // Will fallback to headless connection-attempt.
+                        signalboyService.connectToPeripheral()
                     }
                 } catch (exception: Exception) {
-                    continueWithNextAttempt(
+                    // Connection attempt was not successful.
+                    return continueWithNextAttempt(
                         exception,
                         recoverStrategy.also {
-                            if (it.request.isResolved) {
+                            if (it.userInteractionRequest.isResolved) {
                                 it.resetRequest()
                             }
                         }
@@ -173,12 +175,12 @@ internal class ConnectionSupervisingManager(
         }
 
         // Connected successfully.
-        return@coroutineScope null
+        return null
     }
 
-    private suspend fun reconnectIfNeeded(state: SignalboyMediator.State) {
+    private suspend fun reconnectIfNeeded(state: ISignalboyService.State) {
         // Reconnect if connection was dropped due to an error.
-        val disconnectCause = (state as? SignalboyMediator.State.Disconnected)?.cause
+        val disconnectCause = (state as? ISignalboyService.State.Disconnected)?.cause
         if (disconnectCause != null) {
             Log.w(TAG, "Connection lost due to error:", disconnectCause)
             val recoverStrategy: RecoverStrategy = when (disconnectCause) {
@@ -211,12 +213,12 @@ internal class ConnectionSupervisingManager(
         class UserInteractionRecoverStrategy(
             cause: Throwable?,
         ) : RecoverStrategy(cause) {
-            var request = makeRequest()
+            var userInteractionRequest = makeRequest()
                 private set
 
             fun resetRequest() {
-                request.cancel()
-                request = makeRequest()
+                userInteractionRequest.cancel()
+                userInteractionRequest = makeRequest()
             }
 
             companion object {
