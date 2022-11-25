@@ -78,8 +78,7 @@
 
                     <TextView
                         android:layout_width="wrap_content"
-                        android:layout_height="0dp"
-                        android:layout_weight="1"
+                        android:layout_height="wrap_content"
                         android:paddingBottom="16dp"
                         android:text="Discovery Mode Strategy"
                         android:textAppearance="@style/TextAppearance.MaterialComponents.Headline6" />
@@ -114,6 +113,17 @@
                             android:text="Companion Device" />
                     </com.google.android.material.button.MaterialButtonToggleGroup>
 
+                    <!-- TODO: Remove TextView, once Device-Discovery-Strategy Selection feature is implemented. -->
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:paddingTop="8dp"
+                        android:paddingBottom="8dp"
+                        android:text="Device-Discovery-Strategy selection not yet implemented!"
+                        android:textAppearance="@style/TextAppearance.MaterialComponents.Body2"
+                        android:textColor="?android:attr/textColorSecondary"
+                        android:textStyle="italic" />
+
                 </LinearLayout>
 
 
@@ -125,8 +135,7 @@
 
                     <TextView
                         android:layout_width="wrap_content"
-                        android:layout_height="0dp"
-                        android:layout_weight="1"
+                        android:layout_height="wrap_content"
                         android:paddingBottom="16dp"
                         android:text="Actions"
                         android:textAppearance="@style/TextAppearance.MaterialComponents.Headline6" />

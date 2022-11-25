@@ -340,6 +340,7 @@ class MainActivity : AppCompatActivity(), ActivityCompat.OnRequestPermissionsRes
     private fun updateView() {
         updateBTStatusIcon()
         updateFab()
+        updateDiscoveryModeViews()
         updateResolveUserInteractionRequestWidgets()
     }
 
@@ -353,45 +354,75 @@ class MainActivity : AppCompatActivity(), ActivityCompat.OnRequestPermissionsRes
             )
         }
 
-        when (val connectionState = signalboyService?.state) {
-            is ISignalboyService.State.Disconnected -> {
-                binding.contentMain.textPrimary.text = "Disconnected"
-                binding.contentMain.textSecondary.text = "Cause: ${connectionState.cause}"
-                setImageViewDrawable(R.drawable.baseline_bluetooth_black_24dp)
-            }
+        with(binding.contentMain) {
+            when (val connectionState = signalboyService?.state) {
+                is ISignalboyService.State.Disconnected -> {
+                    textPrimary.text = "Disconnected"
+                    textSecondary.text = "Cause: ${connectionState.cause}"
+                    setImageViewDrawable(R.drawable.baseline_bluetooth_black_24dp)
+                }
 
-            is ISignalboyService.State.Connecting -> {
-                binding.contentMain.textPrimary.text = "Connecting"
-                binding.contentMain.textSecondary.text = ""
-                setImageViewDrawable(R.drawable.baseline_bluetooth_searching_black_24dp)
-            }
+                is ISignalboyService.State.Connecting -> {
+                    textPrimary.text = "Connecting"
+                    textSecondary.text = ""
+                    setImageViewDrawable(R.drawable.baseline_bluetooth_searching_black_24dp)
+                }
 
-            is ISignalboyService.State.Connected -> {
-                val (deviceInformation, isSynced) = connectionState
+                is ISignalboyService.State.Connected -> {
+                    val (deviceInformation, isSynced) = connectionState
 
-                binding.contentMain.textPrimary.text = "Connected"
-                binding.contentMain.textSecondary.text =
-                    "• Device Information:" +
-                            "\n\t• local-name=${deviceInformation.localName}" +
-                            "\n\t• hardware-revision=${deviceInformation.hardwareRevision}" +
-                            "\n\t• software-revision=${deviceInformation.softwareRevision}" +
-                            "\n• isSynced=$isSynced"
-                setImageViewDrawable(R.drawable.baseline_bluetooth_connected_black_24dp)
-            }
+                    textPrimary.text = "Connected"
+                    textSecondary.text =
+                        "• Device Information:" +
+                                "\n\t• local-name=${deviceInformation.localName}" +
+                                "\n\t• hardware-revision=${deviceInformation.hardwareRevision}" +
+                                "\n\t• software-revision=${deviceInformation.softwareRevision}" +
+                                "\n• isSynced=$isSynced"
+                    setImageViewDrawable(R.drawable.baseline_bluetooth_connected_black_24dp)
+                }
 
-            null -> {
-                binding.contentMain.textPrimary.text = "Service not started"
-                binding.contentMain.textSecondary.text = ""
-                setImageViewDrawable(R.drawable.round_power_settings_new_black_24dp)
+                null -> {
+                    textPrimary.text = "Service not started"
+                    textSecondary.text = ""
+                    setImageViewDrawable(R.drawable.round_power_settings_new_black_24dp)
+                }
             }
         }
     }
 
+    private fun updateDiscoveryModeViews() {
+        // Stub implementation to use, while Discovery-Strategy-Selection feature is WIP.
+        fun stubImplementation() {
+            with(binding.contentMain) {
+                toggleButtonGroupDiscovery.check(R.id.button_discovery_companion_device)
+
+                // TODO: Replace current, to be deprecated implementation with following
+                //   out-commented implementation, once dependency
+                //   "com.google.android.material" is upgraded (>1.8.0 required):
+//                toggleButtonGroupDiscovery.isEnabled = false
+                run { // Will be deprecated:
+                    listOf(
+                        buttonDiscoveryAuto,
+                        buttonDiscoveryScanner,
+                        buttonDiscoveryCompanionDevice,
+                    )
+                        .forEach { it.isEnabled = false }
+                }
+            }
+        }
+
+        stubImplementation()
+    }
+
     private fun onDiscoveryModeButtonChecked(@IdRes checkedId: Int) {
         when (checkedId) {
-            R.id.button_discovery_auto -> TODO()
-            R.id.button_discovery_scanner -> TODO()
-            R.id.button_discovery_companion_device -> TODO()
+            R.id.button_discovery_auto ->
+                TODO("Implement for Discovery-Strategy-Selection feature")
+            R.id.button_discovery_scanner ->
+                TODO("Implement for Discovery-Strategy-Selection feature")
+            R.id.button_discovery_companion_device -> {
+                // TODO("Implement for Discovery-Strategy-Selection feature")
+            }
             else -> throw IllegalArgumentException("Unknown case: checkedId=$checkedId")
         }
     }
