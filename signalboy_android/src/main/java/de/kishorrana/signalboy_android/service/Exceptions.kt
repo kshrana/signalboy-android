@@ -7,7 +7,7 @@ class MissingRequiredRuntimePermissionException(
     constructor(cause: Throwable?) : this(null, cause)
 }
 
-class BluetoothDisabledException : IllegalStateException("Expects Bluetooth to be enabled.")
+class BluetoothDisabledException : IllegalStateException("Bluetooth must be enabled.")
 
 class CompanionDeviceSetupNotSupportedException : IllegalStateException(
     "uses-feature declaration for `PackageManager#FEATURE_COMPANION_DEVICE_SETUP` required" +
