@@ -33,6 +33,7 @@ import de.kishorrana.signalboy_android.service.scanner.BluetoothLeScanFailed
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.yield
 
 private const val TAG = "MainActivity"
 
@@ -123,15 +124,17 @@ class MainActivity : AppCompatActivity(), ActivityCompat.OnRequestPermissionsRes
                 setOnClickListener {
                     lifecycleScope.launch {
                         val userInteractionRequestResolving =
-                            checkNotNull(signalboyService)
-                                .let { signalboyService ->
-                                    async {
-                                        signalboyService.resolveUserInteractionRequest(
-                                            this@MainActivity,
-                                            SignalboyService.injectAssociateFragment(fragmentManager)
-                                        )
-                                    }.also {
-                                        deferredUserInteractionRequestResults.add(it)
+                            checkNotNull(signalboyService).let { signalboyService ->
+                                async {
+                                    signalboyService.resolveUserInteractionRequest(
+                                        this@MainActivity,
+                                        SignalboyService.injectAssociateFragment(fragmentManager)
+                                    )
+                                }.also {
+                                    deferredUserInteractionRequestResults.add(it)
+                                    updateView()
+                                }.also {
+                                    yield()
                                         updateView()
                                     }
                                 }
