@@ -49,7 +49,8 @@ class SignalboyService : LifecycleService(), ISignalboyService {
     override val state: State
         get() = latestState.value
 
-    val hasUserInteractionRequest get() = connectionSupervisingManager.hasAnyOpenUserInteractionRequest
+    val hasAnyOpenUserInteractionRequest
+        get() = connectionSupervisingManager.hasAnyOpenUserInteractionRequest
 
     private val _latestState = MutableStateFlow<State>(State.Disconnected(null))
     override val latestState: StateFlow<State> by lazy {

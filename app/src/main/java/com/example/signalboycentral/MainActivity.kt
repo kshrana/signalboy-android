@@ -446,7 +446,7 @@ class MainActivity : AppCompatActivity(), ActivityCompat.OnRequestPermissionsRes
     private fun updateResolveUserInteractionRequestWidgets() {
         with(binding.contentMain) {
             buttonResolveUserInteractionRequest.isEnabled =
-                signalboyService?.hasUserInteractionRequest == true
+                signalboyService?.hasAnyOpenUserInteractionRequest == true
             progressIndicatorResolveUserInteractionRequest.isVisible =
                 deferredUserInteractionRequestResults
                     .any { it.isActive }
