@@ -2,14 +2,13 @@ package com.example.signalboycentral
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.app.ActivityManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
-import android.content.ServiceConnection
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
-import android.os.IBinder
 import android.util.Log
 import android.view.Menu
 import android.view.MenuItem
@@ -20,6 +19,7 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.core.content.getSystemService
 import androidx.core.view.isVisible
 import androidx.lifecycle.lifecycleScope
 import com.example.signalboycentral.databinding.ActivityMainBinding
@@ -54,39 +54,7 @@ class MainActivity : AppCompatActivity(), ActivityCompat.OnRequestPermissionsRes
 
     private lateinit var binding: ActivityMainBinding
 
-    private val signalboyServiceConnection: ServiceConnection = object : ServiceConnection {
-        override fun onServiceConnected(
-            componentName: ComponentName,
-            service: IBinder
-        ) {
-            signalboyService = (service as SignalboyService.LocalBinder).getService().apply {
-                onConnectionStateUpdateListener = onStateUpdateListener
-            }
-            // Manually trigger connect, when service is started and `autostart`-option disabled.
-//                .also { signalboyService ->
-//                    lifecycleScope.launch {
-//                        when (signalboyService.state) {
-//                            is State.Disconnected -> signalboyService.connectToPeripheralAsync()
-//                            else -> { /* no-op */
-//                            }
-//                        }
-//                    }
-//                }
-
-            updateView()
-        }
-
-        override fun onServiceDisconnected(componentName: ComponentName) {
-            // This is called when the connection with the service has been
-            // unexpectedly disconnected -- that is, its process crashed.
-            Log.e(TAG, "onServiceDisconnected")
-            signalboyService = null
-
-            updateView()
-        }
-    }
-
-    private val onStateUpdateListener = SignalboyService.OnConnectionStateUpdateListener {
+    private val onConnectionStateUpdateListener = SignalboyService.OnConnectionStateUpdateListener {
         // Check for errors...
         (it as? ISignalboyService.State.Disconnected)?.cause?.let { err ->
             onConnectionError(err)
@@ -99,6 +67,8 @@ class MainActivity : AppCompatActivity(), ActivityCompat.OnRequestPermissionsRes
 
     private val deferredUserInteractionRequestResults = mutableListOf<Job>()
     private var testing: Job? = null
+
+    private val activityManager: ActivityManager by lazy { getSystemService()!! }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -185,6 +155,10 @@ class MainActivity : AppCompatActivity(), ActivityCompat.OnRequestPermissionsRes
             }
         }
 
+        // SignalboyService might have been bound before, but we still have to
+        // update its listener reference.
+        signalboyService?.onConnectionStateUpdateListener = onConnectionStateUpdateListener
+
         updateView()
     }
 
@@ -199,10 +173,9 @@ class MainActivity : AppCompatActivity(), ActivityCompat.OnRequestPermissionsRes
 //        }
     }
 
-//    override fun onStop() {
-//        super.onStop()
-//
-//        stopSignalboyService()
+//    override fun onDestroy() {
+//        super.onDestroy()
+//        Log.d(TAG, "onDestroy")
 //    }
 
     override fun onCreateOptionsMenu(menu: Menu): Boolean {
@@ -357,33 +330,39 @@ class MainActivity : AppCompatActivity(), ActivityCompat.OnRequestPermissionsRes
         }
 
         with(binding.contentMain) {
-            when (val connectionState = signalboyService?.state) {
-                is ISignalboyService.State.Disconnected -> {
-                    textPrimary.text = "Disconnected"
-                    textSecondary.text = "Cause: ${connectionState.cause}"
-                    setImageViewDrawable(R.drawable.baseline_bluetooth_black_24dp)
-                }
+            signalboyService.let { signalboyService ->
+                if (activityManager.isSignalboyServiceRunning()) {
+                    checkNotNull(signalboyService) { "Assertion failure: Service is expected to be bound, when running!" }
 
-                is ISignalboyService.State.Connecting -> {
-                    textPrimary.text = "Connecting"
-                    textSecondary.text = ""
-                    setImageViewDrawable(R.drawable.baseline_bluetooth_searching_black_24dp)
-                }
+                    when (val connectionState = signalboyService.state) {
+                        is ISignalboyService.State.Disconnected -> {
+                            textPrimary.text = "Disconnected"
+                            textSecondary.text = "Cause: ${connectionState.cause}"
+                            setImageViewDrawable(R.drawable.baseline_bluetooth_black_24dp)
+                        }
 
-                is ISignalboyService.State.Connected -> {
-                    val (deviceInformation, isSynced) = connectionState
+                        is ISignalboyService.State.Connecting -> {
+                            textPrimary.text = "Connecting"
+                            textSecondary.text = ""
+                            setImageViewDrawable(R.drawable.baseline_bluetooth_searching_black_24dp)
+                        }
 
-                    textPrimary.text = "Connected"
-                    textSecondary.text =
-                        "• Device Information:" +
-                                "\n\t• local-name=${deviceInformation.localName}" +
-                                "\n\t• hardware-revision=${deviceInformation.hardwareRevision}" +
-                                "\n\t• software-revision=${deviceInformation.softwareRevision}" +
-                                "\n• isSynced=$isSynced"
-                    setImageViewDrawable(R.drawable.baseline_bluetooth_connected_black_24dp)
-                }
+                        is ISignalboyService.State.Connected -> {
+                            val (deviceInformation, isSynced) = connectionState
 
-                null -> {
+                            textPrimary.text = "Connected"
+                            textSecondary.text =
+                                "• Device Information:" +
+                                        "\n\t• local-name=${deviceInformation.localName}" +
+                                        "\n\t• hardware-revision=${deviceInformation.hardwareRevision}" +
+                                        "\n\t• software-revision=${deviceInformation.softwareRevision}" +
+                                        "\n• isSynced=$isSynced"
+                            setImageViewDrawable(R.drawable.baseline_bluetooth_connected_black_24dp)
+                        }
+                    }
+                } else {
+                    check(signalboyService == null) { "Assertion failure: Service is expected to be stopped, when not bound!" }
+
                     textPrimary.text = "Service not started"
                     textSecondary.text = ""
                     setImageViewDrawable(R.drawable.round_power_settings_new_black_24dp)
@@ -435,11 +414,11 @@ class MainActivity : AppCompatActivity(), ActivityCompat.OnRequestPermissionsRes
         }
 
         if (signalboyService == null) {
-            binding.fab.text = "Start"
-            setFabIconDrawable(R.drawable.round_play_arrow_black_24dp)
+            binding.fab.text = "Bind"
+            setFabIconDrawable(R.drawable.baseline_north_east_black_24dp)
         } else {
-            binding.fab.text = "Stop"
-            setFabIconDrawable(R.drawable.round_stop_black_24dp)
+            binding.fab.text = "Unbind"
+            setFabIconDrawable(R.drawable.baseline_south_west_black_24dp)
         }
     }
 
@@ -457,10 +436,11 @@ class MainActivity : AppCompatActivity(), ActivityCompat.OnRequestPermissionsRes
         if (signalboyService == null) {
             // TODO: Restore scanning functionality
 //            startPermissionRequests()
-
-            startSignalboyService()
+            // TODO: Remove stub
+            bindSignalboyService()
         } else {
-            stopSignalboyService()
+            unbindSignalboyService()
+            updateView()
         }
     }
 
@@ -573,7 +553,7 @@ class MainActivity : AppCompatActivity(), ActivityCompat.OnRequestPermissionsRes
             return
         }
 
-        startSignalboyService()
+        bindSignalboyService()
     }
 
     private fun startPermissionRequests() {
@@ -585,32 +565,34 @@ class MainActivity : AppCompatActivity(), ActivityCompat.OnRequestPermissionsRes
         requestNextPermission()
     }
 
-    private fun startSignalboyService() {
-        val config = SignalboyService.Configuration.Default
+    private fun bindSignalboyService() = bindSignalboyService(application) {
+        it.onConnectionStateUpdateListener = onConnectionStateUpdateListener
+        updateView()
+    }
+
+    private fun ActivityManager.isSignalboyServiceRunning() = getRunningServices(1_000).any {
+        it.service == ComponentName(this@MainActivity, SignalboyService::class.java)
+    }
+
+    companion object {
+        private var boundSignalboyService: BoundSignalboyService? = null
+        private val signalboyService get() = boundSignalboyService?.getService()
+
+        private fun bindSignalboyService(context: Context, completion: (SignalboyService) -> Unit) {
+            val config = SignalboyService.Configuration.Default
 //            SignalboyService.Configuration(
 //                normalizationDelay = 100L,
 //                isAutoReconnectEnabled = false
 //            )
-        Intent(this, SignalboyService::class.java)
-            .putExtra(SignalboyService.EXTRA_CONFIGURATION, config)
-            .also { intent ->
-                val result =
-                    bindService(intent, signalboyServiceConnection, Context.BIND_AUTO_CREATE)
-                Log.d(TAG, "result=$result")
+            BoundSignalboyService.instantiate(context, config) {
+                boundSignalboyService = it
+                completion(it.getService())
             }
-    }
+        }
 
-    private fun stopSignalboyService() {
-        val signalboyService = signalboyService ?: return
-
-        signalboyService.onConnectionStateUpdateListener = null
-        Companion.signalboyService = null
-        unbindService(signalboyServiceConnection)
-
-        updateView()
-    }
-
-    companion object {
-        private var signalboyService: SignalboyService? = null
+        private fun unbindSignalboyService() {
+            checkNotNull(boundSignalboyService).unbind()
+            boundSignalboyService = null
+        }
     }
 }
