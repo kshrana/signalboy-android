@@ -13,7 +13,7 @@ will be restored by completing the following tasks:
     uses-feature `PackageManager#FEATURE_COMPANION_DEVICE_SETUP` declaration, that 
     the Companion Manager API expects.
   - [ ] Public method for clearing associations made by Signalboy
-  - [ ] Review use of deprecated methods in CompanionDeviceManager API implementation
+  - ~~[ ] Review use of deprecated methods in CompanionDeviceManager API implementation~~
 - [ ] Convert SignalboyService to unbound-service
   - [ ] Implement communication via BroadcastReceiver
   - [ ] Make sure that SignalboyService is properly kept alive (e.g. when UnityPlayerActivity is destroyed)

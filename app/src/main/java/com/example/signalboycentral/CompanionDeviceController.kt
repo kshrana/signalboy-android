@@ -45,7 +45,6 @@ class CompanionDeviceController(
                 Activity.RESULT_OK -> {
                     Log.i(TAG, "onActivityResult: SELECT_DEVICE_REQUEST=OK")
                     // The user chose to pair the app with a Bluetooth device.
-                    // TODO: sdk >= 33: migrate to `CompanionDeviceManager.EXTRA_ASSOCIATION`
                     val item: ScanResult? =
                         activityResult.data?.getParcelableExtra(CompanionDeviceManager.EXTRA_DEVICE)
                     item?.device?.let { device ->

@@ -113,7 +113,7 @@
                             android:text="Companion Device" />
                     </com.google.android.material.button.MaterialButtonToggleGroup>
 
-                    <!-- TODO: Remove TextView, once Device-Discovery-Strategy Selection feature is implemented. -->
+                    <!-- TODO: Remove following WIP-notice, once Device-Discovery-Strategy Selection feature is implemented. -->
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
