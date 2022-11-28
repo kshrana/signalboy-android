@@ -53,7 +53,6 @@ class MainActivity : AppCompatActivity(), ActivityCompat.OnRequestPermissionsRes
 
     private lateinit var binding: ActivityMainBinding
 
-    private var signalboyService: SignalboyService? = null
     private val signalboyServiceConnection: ServiceConnection = object : ServiceConnection {
         override fun onServiceConnected(
             componentName: ComponentName,
@@ -599,12 +598,16 @@ class MainActivity : AppCompatActivity(), ActivityCompat.OnRequestPermissionsRes
     }
 
     private fun stopSignalboyService() {
-        val signalboyService = this.signalboyService ?: return
+        val signalboyService = signalboyService ?: return
 
         signalboyService.onConnectionStateUpdateListener = null
-        this.signalboyService = null
+        Companion.signalboyService = null
         unbindService(signalboyServiceConnection)
 
         updateView()
+    }
+
+    companion object {
+        private var signalboyService: SignalboyService? = null
     }
 }
