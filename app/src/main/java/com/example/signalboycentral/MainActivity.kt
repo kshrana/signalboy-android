@@ -436,7 +436,7 @@ class MainActivity : AppCompatActivity(), ActivityCompat.OnRequestPermissionsRes
         if (signalboyService == null) {
             // TODO: Restore scanning functionality
 //            startPermissionRequests()
-            // TODO: Remove stub
+            // TODO: Remove stub (once scanning functionality is restored)
             bindSignalboyService()
         } else {
             unbindSignalboyService()

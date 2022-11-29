@@ -256,7 +256,7 @@ class SignalboyService : LifecycleService(), ISignalboyService {
                         .map { (address, _) -> address }
                 }
 
-                // TODO: Restore scanner-functionality
+                // TODO: Restore scanning functionality
 //                val devices = Scanner(bluetoothAdapter).discoverPeripherals(
 //                    rejectRequestAddresses,
 //                    SignalboyGattAttributes.OUTPUT_SERVICE_UUID,
@@ -580,7 +580,7 @@ class SignalboyService : LifecycleService(), ISignalboyService {
         const val EXTRA_CONFIGURATION = "EXTRA_CONFIGURATION"
         const val TAG_FRAGMENT_ASSOCIATE = "FRAGMENT_ASSOCIATE"
 
-        private val applicableDeviceDiscoveryStrategies
+        private val allDeviceDiscoveryStrategies
             // TODO: Implement flow, that decides whether to return with CompanionDevice- or Scanner-
             //   DiscoveryStrategy, or even both.
             get() = listOf(
@@ -600,7 +600,7 @@ class SignalboyService : LifecycleService(), ISignalboyService {
             SignalboyPrerequisitesHelper.verifyPrerequisites(
                 context,
                 bluetoothAdapter,
-                applicableDeviceDiscoveryStrategies
+                allDeviceDiscoveryStrategies
             )
 
         @JvmStatic

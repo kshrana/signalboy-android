@@ -7,7 +7,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import de.kishorrana.signalboy_android.service.PrerequisitesNode
 
-// TODO: Implement `ScanDeviceDiscoveryStrategy`.
+// TODO: Implement scanning functionality.
 class ScanDeviceDiscoveryStrategy {
 
     companion object {
