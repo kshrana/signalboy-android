@@ -163,15 +163,14 @@ class MainActivity : AppCompatActivity(), ActivityCompat.OnRequestPermissionsRes
     }
 
     var _onceToken = false
-    override fun onStart() {
-        super.onStart()
-
-        // FIXME: DO NOT COMMIT
+//    override fun onStart() {
+//        super.onStart()
+//
 //        if (!_onceToken) {
 //            onFabClicked()
 //            _onceToken = true
 //        }
-    }
+//    }
 
 //    override fun onDestroy() {
 //        super.onDestroy()
