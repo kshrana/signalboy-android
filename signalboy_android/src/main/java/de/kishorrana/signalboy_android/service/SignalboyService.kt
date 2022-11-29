@@ -470,7 +470,9 @@ class SignalboyService : LifecycleService(), ISignalboyService {
     }
 
     @SuppressLint("MissingPermission")
-    private fun BluetoothDevice.getNameOrDefault(defaultValue: String) = runCatching { name }
+    private fun BluetoothDevice.getNameOrDefault(defaultValue: String) = runCatching {
+        checkNotNull(name)
+    }
         .getOrDefault(defaultValue)
 
     /**
