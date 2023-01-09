@@ -74,7 +74,10 @@ internal class ClientBluetoothGattCallback(scope: CoroutineScope) : BluetoothGat
     ) {
         val loggingHandler: (tag: String?, msg: String) -> Int =
             if (status == GATT_STATUS_SUCCESS) Log::d else Log::w
-        loggingHandler(TAG, "onDescriptorWrite() - status=${status.toByte().toHexString()}")
+        loggingHandler(
+            TAG, "onDescriptorWrite() - descriptor=${descriptor?.uuid} " +
+                    "status=${status.toByte().toHexString()}"
+        )
 
         _asyncOperationResponseChannel.trySend(
             GattOperationResponse.DescriptorWriteResponse(descriptor!!, status)
@@ -89,7 +92,7 @@ internal class ClientBluetoothGattCallback(scope: CoroutineScope) : BluetoothGat
         val loggingHandler: (tag: String?, msg: String) -> Int =
             if (status == GATT_STATUS_SUCCESS) Log::d else Log::w
         loggingHandler(
-            TAG, "onCharacteristicRead() - characteristic=$characteristic " +
+            TAG, "onCharacteristicRead() - characteristic=${characteristic?.uuid} " +
                     "status=${status.toByte().toHexString()}"
         )
 
@@ -109,7 +112,7 @@ internal class ClientBluetoothGattCallback(scope: CoroutineScope) : BluetoothGat
         val loggingHandler: (tag: String?, msg: String) -> Int =
             if (status == GATT_STATUS_SUCCESS) Log::d else Log::w
         loggingHandler(
-            TAG, "onCharacteristicWrite() - characteristic=$characteristic " +
+            TAG, "onCharacteristicWrite() - characteristic=${characteristic?.uuid} " +
                     "status=${status.toByte().toHexString()}"
         )
 
@@ -122,7 +125,7 @@ internal class ClientBluetoothGattCallback(scope: CoroutineScope) : BluetoothGat
         gatt: BluetoothGatt?,
         characteristic: BluetoothGattCharacteristic?
     ) {
-        Log.d(TAG, "onCharacteristicChanged() - characteristic=$characteristic")
+        Log.d(TAG, "onCharacteristicChanged() - characteristic=${characteristic?.uuid}")
 
         _asyncOperationResponseChannel.trySend(
             GattOperationResponse.CharacteristicChangedResponse(characteristic!!)
