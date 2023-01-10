@@ -27,7 +27,7 @@ internal class ClientBluetoothGattCallback(scope: CoroutineScope) : BluetoothGat
         _asyncOperationResponseChannel.receiveAsSharedFlow(scope)
 
     override fun onConnectionStateChange(
-        gatt: BluetoothGatt?,
+        gatt: BluetoothGatt,
         status: Int,
         newState: Int
     ) {
@@ -46,10 +46,7 @@ internal class ClientBluetoothGattCallback(scope: CoroutineScope) : BluetoothGat
         )
     }
 
-    @Suppress("NAME_SHADOWING")
-    override fun onServicesDiscovered(gatt: BluetoothGatt?, status: Int) {
-        val gatt = gatt ?: throw IllegalArgumentException("`gatt` must not be null.")
-
+    override fun onServicesDiscovered(gatt: BluetoothGatt, status: Int) {
         val loggingHandler: (tag: String?, msg: String) -> Int =
             if (status == GATT_STATUS_SUCCESS) Log::d else Log::w
         loggingHandler(TAG, "onServicesDiscovered() - status=${status.toByte().toHexString()}")
@@ -68,67 +65,67 @@ internal class ClientBluetoothGattCallback(scope: CoroutineScope) : BluetoothGat
     }
 
     override fun onDescriptorWrite(
-        gatt: BluetoothGatt?,
-        descriptor: BluetoothGattDescriptor?,
+        gatt: BluetoothGatt,
+        descriptor: BluetoothGattDescriptor,
         status: Int
     ) {
         val loggingHandler: (tag: String?, msg: String) -> Int =
             if (status == GATT_STATUS_SUCCESS) Log::d else Log::w
         loggingHandler(
-            TAG, "onDescriptorWrite() - descriptor=${descriptor?.uuid} " +
+            TAG, "onDescriptorWrite() - descriptor=${descriptor.uuid} " +
                     "status=${status.toByte().toHexString()}"
         )
 
         _asyncOperationResponseChannel.trySend(
-            GattOperationResponse.DescriptorWriteResponse(descriptor!!, status)
+            GattOperationResponse.DescriptorWriteResponse(descriptor, status)
         )
     }
 
     override fun onCharacteristicRead(
-        gatt: BluetoothGatt?,
-        characteristic: BluetoothGattCharacteristic?,
+        gatt: BluetoothGatt,
+        characteristic: BluetoothGattCharacteristic,
         status: Int
     ) {
         val loggingHandler: (tag: String?, msg: String) -> Int =
             if (status == GATT_STATUS_SUCCESS) Log::d else Log::w
         loggingHandler(
-            TAG, "onCharacteristicRead() - characteristic=${characteristic?.uuid} " +
+            TAG, "onCharacteristicRead() - characteristic=${characteristic.uuid} " +
                     "status=${status.toByte().toHexString()}"
         )
 
         _asyncOperationResponseChannel.trySend(
             GattOperationResponse.CharacteristicReadResponse(
-                characteristic!!,
+                characteristic,
                 status
             )
         )
     }
 
     override fun onCharacteristicWrite(
-        gatt: BluetoothGatt?,
-        characteristic: BluetoothGattCharacteristic?,
+        gatt: BluetoothGatt,
+        characteristic: BluetoothGattCharacteristic,
         status: Int
     ) {
         val loggingHandler: (tag: String?, msg: String) -> Int =
             if (status == GATT_STATUS_SUCCESS) Log::d else Log::w
         loggingHandler(
-            TAG, "onCharacteristicWrite() - characteristic=${characteristic?.uuid} " +
+            TAG, "onCharacteristicWrite() - characteristic=${characteristic.uuid} " +
                     "status=${status.toByte().toHexString()}"
         )
 
         _asyncOperationResponseChannel.trySend(
-            GattOperationResponse.CharacteristicWriteResponse(characteristic!!, status)
+            GattOperationResponse.CharacteristicWriteResponse(characteristic, status)
         )
     }
 
     override fun onCharacteristicChanged(
-        gatt: BluetoothGatt?,
-        characteristic: BluetoothGattCharacteristic?
+        gatt: BluetoothGatt,
+        characteristic: BluetoothGattCharacteristic
     ) {
-        Log.d(TAG, "onCharacteristicChanged() - characteristic=${characteristic?.uuid}")
+        Log.d(TAG, "onCharacteristicChanged() - characteristic=${characteristic.uuid}")
 
         _asyncOperationResponseChannel.trySend(
-            GattOperationResponse.CharacteristicChangedResponse(characteristic!!)
+            GattOperationResponse.CharacteristicChangedResponse(characteristic)
         )
     }
 
