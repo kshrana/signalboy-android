@@ -3,9 +3,7 @@ package com.example.signalboycentral
 import android.Manifest
 import android.annotation.SuppressLint
 import android.app.ActivityManager
-import android.content.ComponentName
-import android.content.Context
-import android.content.Intent
+import android.content.*
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -23,6 +21,9 @@ import androidx.core.content.getSystemService
 import androidx.core.view.isVisible
 import androidx.lifecycle.lifecycleScope
 import com.example.signalboycentral.databinding.ActivityMainBinding
+import com.example.signalboycentral.testrunner.EventsSchedule
+import com.example.signalboycentral.testrunner.RandomDelayTestRunner
+import com.example.signalboycentral.testrunner.ScheduledEventsTestRunner
 import com.google.android.material.shape.ShapeAppearanceModel
 import com.google.android.material.snackbar.Snackbar
 import de.kishorrana.signalboy_android.service.*
@@ -53,6 +54,21 @@ private val locationRuntimePermissions = arrayOf(
 class MainActivity : AppCompatActivity(), ActivityCompat.OnRequestPermissionsResultCallback {
 
     private lateinit var binding: ActivityMainBinding
+
+    private val broadcastReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            StringBuilder().apply {
+                append("Action: ${intent.action}\n")
+                append("URI: ${intent.toUri(Intent.URI_INTENT_SCHEME)}\n")
+                toString().also { log ->
+                    Log.d(TAG, log)
+                    Toast.makeText(context, log, Toast.LENGTH_LONG).show()
+                }
+            }
+
+            toggleTestRunner()
+        }
+    }
 
     private val onConnectionStateUpdateListener = SignalboyService.OnConnectionStateUpdateListener {
         // Check for errors...
@@ -141,17 +157,7 @@ class MainActivity : AppCompatActivity(), ActivityCompat.OnRequestPermissionsRes
 
             buttonSync.setOnClickListener { signalboyService!!.tryTriggerSync() }
             buttonTest.apply {
-                setOnClickListener {
-                    if (testing?.isActive == true) {
-                        testing?.cancel()
-                        text = getString(R.string.button_test_start)
-                    } else {
-                        signalboyService?.let {
-                            testing = lifecycleScope.launch { TestRunner().execute(it) }
-                            text = getString(R.string.button_test_stop)
-                        }
-                    }
-                }
+                setOnClickListener { toggleTestRunner() }
             }
         }
 
@@ -160,6 +166,13 @@ class MainActivity : AppCompatActivity(), ActivityCompat.OnRequestPermissionsRes
         signalboyService?.onConnectionStateUpdateListener = onConnectionStateUpdateListener
 
         updateView()
+
+        ContextCompat.registerReceiver(
+            this,
+            broadcastReceiver,
+            IntentFilter("com.example.signalboycentral.intent.action.TEST_RUN"),
+            ContextCompat.RECEIVER_EXPORTED
+        )
     }
 
     var _onceToken = false
@@ -172,10 +185,12 @@ class MainActivity : AppCompatActivity(), ActivityCompat.OnRequestPermissionsRes
 //        }
 //    }
 
-//    override fun onDestroy() {
-//        super.onDestroy()
-//        Log.d(TAG, "onDestroy")
-//    }
+    override fun onDestroy() {
+        Log.d(TAG, "onDestroy")
+        unregisterReceiver(broadcastReceiver)
+
+        super.onDestroy()
+    }
 
     override fun onCreateOptionsMenu(menu: Menu): Boolean {
         // Inflate the menu; this adds items to the action bar if it is present.
@@ -407,6 +422,12 @@ class MainActivity : AppCompatActivity(), ActivityCompat.OnRequestPermissionsRes
         }
     }
 
+    private fun updateTestButton() {
+        binding.contentMain.buttonTest.text = if (testing?.isActive == true)
+            getString(R.string.button_test_stop) else
+            getString(R.string.button_test_start)
+    }
+
     private fun updateFab() {
         fun setFabIconDrawable(@DrawableRes resourceId: Int) {
             binding.fab.icon = ContextCompat.getDrawable(this, resourceId)
@@ -571,6 +592,26 @@ class MainActivity : AppCompatActivity(), ActivityCompat.OnRequestPermissionsRes
 
     private fun ActivityManager.isSignalboyServiceRunning() = getRunningServices(1_000).any {
         it.service == ComponentName(this@MainActivity, SignalboyService::class.java)
+    }
+
+    private fun toggleTestRunner() {
+        if (testing?.isActive == true) {
+            testing?.cancel()
+        } else {
+            signalboyService?.let {
+                testing = lifecycleScope.launch {
+                    try {
+//                        FixedDelayTestRunner().execute(it)
+//                        RandomDelayTestRunner().execute(it)
+                        ScheduledEventsTestRunner(EventsSchedule.eventTimestamps).execute(it)
+                    } finally {
+                        updateTestButton()
+                    }
+                }
+            }
+        }
+
+        updateTestButton()
     }
 
     companion object {
