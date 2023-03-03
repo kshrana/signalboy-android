@@ -6,7 +6,10 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlin.math.max
 
+private const val THRESHOLD = 100
+
 class ScheduledEventsTestRunner(val eventTimestamps: List<Long>) {
+
     /**
      * Executes the test runner. The test runner will emit events according to the specified
      * schedule.
@@ -18,7 +21,12 @@ class ScheduledEventsTestRunner(val eventTimestamps: List<Long>) {
 
         try {
             for (timestamp in eventTimestamps) {
-                delay(timestamp - (now() - startTime))
+                // non-blocking wait (up until target - threshold)
+                delay(max(timestamp - THRESHOLD, 0) - (now() - startTime))
+                // active wait (blocking thread) for accuracy
+                while(timestamp - (now() - startTime) > 0) {/* no-op */}
+
+                Log.d(TAG, "now=${now() - startTime}")
                 signalboyService.trySendEvent()
             }
         } catch (err: CancellationException) {
