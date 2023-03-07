@@ -1,6 +1,7 @@
 package com.example.signalboycentral.testrunner
 
 import android.util.Log
+import com.example.signalboycentral.serial.SerialController
 import de.kishorrana.signalboy_android.service.SignalboyService
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
@@ -16,7 +17,7 @@ class ScheduledEventsTestRunner(val eventTimestamps: List<Long>) {
      *
      * @param signalboyService
      */
-    suspend fun execute(signalboyService: SignalboyService) {
+    suspend fun execute(signalboyService: SignalboyService, serialController: SerialController) {
         val startTime = now()
 
         try {
@@ -27,6 +28,10 @@ class ScheduledEventsTestRunner(val eventTimestamps: List<Long>) {
                 while(timestamp - (now() - startTime) > 0) {/* no-op */}
 
                 Log.d(TAG, "now=${now() - startTime}")
+                // Notify event via Serial (for measuring latency)
+                if (serialController.isConnected) {
+                    serialController.println("")
+                }
                 signalboyService.trySendEvent()
             }
         } catch (err: CancellationException) {

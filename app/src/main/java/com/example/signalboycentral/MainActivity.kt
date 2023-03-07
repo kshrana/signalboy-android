@@ -21,8 +21,8 @@ import androidx.core.content.getSystemService
 import androidx.core.view.isVisible
 import androidx.lifecycle.lifecycleScope
 import com.example.signalboycentral.databinding.ActivityMainBinding
+import com.example.signalboycentral.serial.SerialController
 import com.example.signalboycentral.testrunner.EventsSchedule
-import com.example.signalboycentral.testrunner.RandomDelayTestRunner
 import com.example.signalboycentral.testrunner.ScheduledEventsTestRunner
 import com.google.android.material.shape.ShapeAppearanceModel
 import com.google.android.material.snackbar.Snackbar
@@ -31,10 +31,7 @@ import de.kishorrana.signalboy_android.service.client.ConnectionTimeoutException
 import de.kishorrana.signalboy_android.service.client.NoConnectionAttemptsLeftException
 import de.kishorrana.signalboy_android.service.scanner.AlreadyScanningException
 import de.kishorrana.signalboy_android.service.scanner.BluetoothLeScanFailed
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.async
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.yield
+import kotlinx.coroutines.*
 
 private const val TAG = "MainActivity"
 
@@ -53,6 +50,7 @@ private val locationRuntimePermissions = arrayOf(
 @SuppressLint("SetTextI18n")
 class MainActivity : AppCompatActivity(), ActivityCompat.OnRequestPermissionsResultCallback {
 
+    private lateinit var serialController: SerialController
     private lateinit var binding: ActivityMainBinding
 
     private val broadcastReceiver = object : BroadcastReceiver() {
@@ -89,6 +87,9 @@ class MainActivity : AppCompatActivity(), ActivityCompat.OnRequestPermissionsRes
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        serialController = SerialController(this, getSystemService()!!)
+        lifecycle.addObserver(serialController)
+
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
@@ -121,9 +122,9 @@ class MainActivity : AppCompatActivity(), ActivityCompat.OnRequestPermissionsRes
                                     updateView()
                                 }.also {
                                     yield()
-                                        updateView()
-                                    }
+                                    updateView()
                                 }
+                            }
 
                         userInteractionRequestResolving.await()
                             .also { result ->
@@ -597,21 +598,46 @@ class MainActivity : AppCompatActivity(), ActivityCompat.OnRequestPermissionsRes
     private fun toggleTestRunner() {
         if (testing?.isActive == true) {
             testing?.cancel()
+            updateTestButton()
         } else {
-            signalboyService?.let {
-                testing = lifecycleScope.launch {
-                    try {
-//                        FixedDelayTestRunner().execute(it)
-//                        RandomDelayTestRunner().execute(it)
-                        ScheduledEventsTestRunner(EventsSchedule.eventTimestamps).execute(it)
-                    } finally {
-                        updateTestButton()
+            lifecycleScope.launch {
+                signalboyService?.let { signalboyService ->
+                    val testing = launch {
+                        try {
+                            if (!serialController.isConnected) {
+                                Log.i(
+                                    TAG,
+                                    "SerialController is disconnected. Will try to connect..."
+                                )
+
+                                try {
+                                    serialController.connect()
+                                    Log.i(TAG, "Success: SerialController is connected.")
+                                } catch (e: Exception) {
+                                    Log.e(TAG, "Failed to connect to Serial:", e)
+                                    cancel()
+                                }
+                            }
+
+//                        FixedDelayTestRunner().execute(signalboyService)
+//                        RandomDelayTestRunner().execute(signalboyService)
+                            ScheduledEventsTestRunner(EventsSchedule.eventTimestamps)
+                                .execute(signalboyService, serialController)
+//                        ScheduledEventsTestRunner(EventsSchedule.event1_000Timestamps)
+//                            .execute(signalboyService)
+                        } catch (exception: Exception) {
+                            Log.e(TAG, "Testing run failed due to:", exception)
+                        }
                     }
+                        .also { this@MainActivity.testing = it }
+                    updateTestButton()
+
+                    // Wait for test run to conclude…
+                    testing.join()
+                    updateTestButton()
                 }
             }
         }
-
-        updateTestButton()
     }
 
     companion object {
