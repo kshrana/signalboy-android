@@ -187,33 +187,18 @@ class SignalboyService : LifecycleService(), ISignalboyService {
      * This is the synchronous variant of `sendEvent`.
      */
     fun trySendEvent() {
-        scope.launch { sendEvent() }
+        val fireDateTimestamp = now() + configuration.normalizationDelay
+        scope.launch { sendEvent(fireDateTimestamp) }
+    }
+
+    // DEBUG-Method
+    fun _trySendEventForceUnsynced() {
+        val fireDateTimestamp = now() + configuration.normalizationDelay
+        scope.launch { sendEvent(fireDateTimestamp, true) }
     }
 
     suspend fun sendEvent() {
-        val fireDateTimestamp = now() + configuration.normalizationDelay
-
-        val isSynced = when (val state = state) {
-            is State.Connected -> state.isSynced
-            else -> return
-        }
-
-        if (isSynced) {
-            val data = fireDateTimestamp.toUInt().toByteArrayLE()
-            client.writeGattCharacteristicAsync(TargetTimestampCharacteristic, data, false)
-        } else {
-            // Fallback to unsynced method.
-            Log.w(
-                TAG, "Falling back to unsynced signaling of event as connected peripheral is " +
-                        "not synced. Timing will be inaccurate."
-            )
-            delay(fireDateTimestamp - now())
-            client.writeGattCharacteristicAsync(
-                TriggerTimerCharacteristic,
-                byteArrayOf(0x01),
-                false
-            )
-        }
+        sendEvent(now() + configuration.normalizationDelay)
     }
 
     /**
@@ -375,6 +360,34 @@ class SignalboyService : LifecycleService(), ISignalboyService {
     private fun requireSignalboyGattAttributes(connectedState: ClientState.Connected) {
         if (!connectedState.services.hasAllSignalboyGattAttributes())
             throw GattClientIsMissingAttributesException()
+    }
+
+    private suspend fun sendEvent(
+        fireDateTimestamp: Long,
+        forceUnsyncedMethod: Boolean = false
+    ) {
+        val isSynced = when (val state = state) {
+            is State.Connected -> state.isSynced
+            else -> return
+        }
+
+        if (isSynced && !forceUnsyncedMethod) {
+            val data = fireDateTimestamp.toUInt().toByteArrayLE()
+            client.writeGattCharacteristicAsync(TargetTimestampCharacteristic, data, false)
+        } else {
+            // Fallback to unsynced method.
+            Log.w(
+                TAG, "Falling back to unsynced signaling of event as connected peripheral is " +
+                        "not synced. Timing will be inaccurate."
+            )
+            // TODO: Optimize timing for Trigger Timestamp!
+            delay(fireDateTimestamp - now())
+            client.writeGattCharacteristicAsync(
+                TriggerTimerCharacteristic,
+                byteArrayOf(0x01),
+                false
+            )
+        }
     }
 
     //region Helper
