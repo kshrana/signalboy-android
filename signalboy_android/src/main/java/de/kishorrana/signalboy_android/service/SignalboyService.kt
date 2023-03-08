@@ -205,7 +205,7 @@ class SignalboyService : LifecycleService(), ISignalboyService {
      * Resolve user interaction request
      *
      * @param activity Activity used for resolving Companion Device Manager with a Context of
-       type `Activity` (as detailed by [OriginAwareCompanionDeviceManager.ensureCanAssociate]).
+    type `Activity` (as detailed by [OriginAwareCompanionDeviceManager.ensureCanAssociate]).
      * @param userInteractionProxy
      * @return
      */
@@ -380,11 +380,22 @@ class SignalboyService : LifecycleService(), ISignalboyService {
                 TAG, "Falling back to unsynced signaling of event as connected peripheral is " +
                         "not synced. Timing will be inaccurate."
             )
-            // TODO: Optimize timing for Trigger Timestamp!
-            delay(fireDateTimestamp - now())
+
+            var delay = fireDateTimestamp - now()
+            if (delay < 0) {
+                Log.w(TAG, "Invalid `delay` (delay=$delay): Value is negative.")
+                delay = 0
+            }
+            if (delay > Byte.MAX_VALUE) {
+                Log.w(
+                    TAG, "Invalid `delay` (delay=$delay): Value exceeds Characteristics' " +
+                            "data-type `MAX_VALUE`."
+                )
+            }
+
             client.writeGattCharacteristicAsync(
                 TriggerTimerCharacteristic,
-                byteArrayOf(0x01),
+                byteArrayOf(delay.toByte()),
                 false
             )
         }
