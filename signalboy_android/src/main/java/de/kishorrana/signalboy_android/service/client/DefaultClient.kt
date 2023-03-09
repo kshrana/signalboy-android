@@ -115,7 +115,7 @@ internal class DefaultClient(
         characteristic: UUID
     ): ByteArray = executeGattOperation {
         readCharacteristic(service, characteristic)
-        val response = gattCallback.asyncOperationResponseFlow
+        val response = gattCallback.asyncOperationResponses
             .mapNotNull { it as? CharacteristicReadResponse }
             .first()
 
@@ -142,7 +142,7 @@ internal class DefaultClient(
         shouldWaitForResponse: Boolean
     ) = executeGattOperation {
         writeCharacteristic(service, characteristic, data, shouldWaitForResponse)
-        val response = gattCallback.asyncOperationResponseFlow
+        val response = gattCallback.asyncOperationResponses
             .mapNotNull { it as? CharacteristicWriteResponse }
             .first()
         response.characteristic.ensureIdentity(service, characteristic)
@@ -159,7 +159,7 @@ internal class DefaultClient(
     ) = executeGattOperation {
         writeDescriptor(service, characteristic, descriptor, data)
 
-        val response = gattCallback.asyncOperationResponseFlow
+        val response = gattCallback.asyncOperationResponses
             .mapNotNull { it as? DescriptorWriteResponse }
             .first()
         response.descriptor.ensureIdentity(service, characteristic, descriptor)
@@ -252,19 +252,19 @@ internal class DefaultClient(
     private fun setupGattCallbackObserving() {
         scope.launch {
             launch {
-                gattCallback.connectionStateChangeResponseFlow.collect { (newState, status) ->
+                gattCallback.connectionStateChangeResponses.collect { (newState, status) ->
                     stateManager.handleEvent(Event.OnGattConnectionStateChange(newState, status))
                 }
             }
             launch {
-                gattCallback.asyncOperationResponseFlow
+                gattCallback.asyncOperationResponses
                     .mapNotNull { it as? ServicesDiscoveredResponse }
                     .collect { (services) ->
                         stateManager.handleEvent(Event.OnGattServicesDiscovered(services))
                     }
             }
             launch {
-                gattCallback.asyncOperationResponseFlow
+                gattCallback.asyncOperationResponses
                     .mapNotNull { it as? CharacteristicChangedResponse }
                     .collect { (bluetoothGattCharacteristic) ->
                         val serviceUUID = bluetoothGattCharacteristic.service.uuid

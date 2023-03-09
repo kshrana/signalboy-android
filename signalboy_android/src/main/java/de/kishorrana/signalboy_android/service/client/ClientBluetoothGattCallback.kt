@@ -4,27 +4,20 @@ import android.bluetooth.*
 import android.util.Log
 import de.kishorrana.signalboy_android.service.gatt.GATT_STATUS_SUCCESS
 import de.kishorrana.signalboy_android.util.toHexString
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.channels.Channel.Factory.CONFLATED
+import kotlinx.coroutines.*
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.ReceiveChannel
-import kotlinx.coroutines.flow.SharedFlow
-import kotlinx.coroutines.flow.SharingStarted
-import kotlinx.coroutines.flow.receiveAsFlow
-import kotlinx.coroutines.flow.shareIn
+import kotlinx.coroutines.flow.*
 
 private const val TAG = "ClientBtGattCallback"
 
 internal class ClientBluetoothGattCallback(scope: CoroutineScope) : BluetoothGattCallback() {
-    private val _connectionStateChangeResponseChannel =
-        makeResponseChannel<ConnectionStateChangeResponse>()
-    val connectionStateChangeResponseFlow =
-        _connectionStateChangeResponseChannel.receiveAsSharedFlow(scope)
+    private val _connectionStateChangeResponseBus =
+        makeResponseBus<ConnectionStateChangeResponse>()
+    val connectionStateChangeResponses = _connectionStateChangeResponseBus.asSharedFlow()
 
-    private val _asyncOperationResponseChannel =
-        makeResponseChannel<GattOperationResponse>()
-    val asyncOperationResponseFlow =
-        _asyncOperationResponseChannel.receiveAsSharedFlow(scope)
+    private val _asyncOperationResponseBus = makeResponseBus<GattOperationResponse>()
+    val asyncOperationResponses = _asyncOperationResponseBus.asSharedFlow()
 
     override fun onConnectionStateChange(
         gatt: BluetoothGatt,
@@ -38,12 +31,13 @@ internal class ClientBluetoothGattCallback(scope: CoroutineScope) : BluetoothGat
                     "gatt=$gatt status=${status.toByte().toHexString()} newState=$newState"
         )
 
-        _connectionStateChangeResponseChannel.trySend(
-            ConnectionStateChangeResponse(
-                newState,
-                status
+        val response = ConnectionStateChangeResponse(newState, status)
+        if (!_connectionStateChangeResponseBus.tryEmit(response)) {
+            Log.w(
+                TAG, "onConnectionStateChange - _connectionStateChangeResponseFlow buffer" +
+                        " overflow! Outbound response will be dropped."
             )
-        )
+        }
     }
 
     override fun onServicesDiscovered(gatt: BluetoothGatt, status: Int) {
@@ -57,11 +51,13 @@ internal class ClientBluetoothGattCallback(scope: CoroutineScope) : BluetoothGat
             Result.failure(ReceivedBadStatusCodeException(status))
         }
 
-        _asyncOperationResponseChannel.trySend(
-            GattOperationResponse.ServicesDiscoveredResponse(
-                result
+        val response = GattOperationResponse.ServicesDiscoveredResponse(result)
+        if (!_asyncOperationResponseBus.tryEmit(response)) {
+            Log.w(
+                TAG, "onServicesDiscovered - _asyncOperationResponseFlow buffer" +
+                        " overflow! Outbound response will be dropped."
             )
-        )
+        }
     }
 
     override fun onDescriptorWrite(
@@ -76,9 +72,13 @@ internal class ClientBluetoothGattCallback(scope: CoroutineScope) : BluetoothGat
                     "status=${status.toByte().toHexString()}"
         )
 
-        _asyncOperationResponseChannel.trySend(
-            GattOperationResponse.DescriptorWriteResponse(descriptor, status)
-        )
+        val response = GattOperationResponse.DescriptorWriteResponse(descriptor, status)
+        if (!_asyncOperationResponseBus.tryEmit(response)) {
+            Log.w(
+                TAG, "onDescriptorWrite - _asyncOperationResponseFlow buffer" +
+                        " overflow! Outbound response will be dropped."
+            )
+        }
     }
 
     @Deprecated("Deprecated in Java")
@@ -94,12 +94,13 @@ internal class ClientBluetoothGattCallback(scope: CoroutineScope) : BluetoothGat
                     "status=${status.toByte().toHexString()}"
         )
 
-        _asyncOperationResponseChannel.trySend(
-            GattOperationResponse.CharacteristicReadResponse(
-                characteristic,
-                status
+        val response = GattOperationResponse.CharacteristicReadResponse(characteristic, status)
+        if (!_asyncOperationResponseBus.tryEmit(response)) {
+            Log.w(
+                TAG, "onCharacteristicRead - _asyncOperationResponseFlow buffer" +
+                        " overflow! Outbound response will be dropped."
             )
-        )
+        }
     }
 
     override fun onCharacteristicWrite(
@@ -114,9 +115,13 @@ internal class ClientBluetoothGattCallback(scope: CoroutineScope) : BluetoothGat
                     "status=${status.toByte().toHexString()}"
         )
 
-        _asyncOperationResponseChannel.trySend(
-            GattOperationResponse.CharacteristicWriteResponse(characteristic, status)
-        )
+        val response = GattOperationResponse.CharacteristicWriteResponse(characteristic, status)
+        if (!_asyncOperationResponseBus.tryEmit(response)) {
+            Log.w(
+                TAG, "onCharacteristicWrite - _asyncOperationResponseFlow buffer" +
+                        " overflow! Outbound response will be dropped."
+            )
+        }
     }
 
     @Deprecated("Deprecated in Java")
@@ -126,9 +131,13 @@ internal class ClientBluetoothGattCallback(scope: CoroutineScope) : BluetoothGat
     ) {
         Log.d(TAG, "onCharacteristicChanged() - characteristic=${characteristic.uuid}")
 
-        _asyncOperationResponseChannel.trySend(
-            GattOperationResponse.CharacteristicChangedResponse(characteristic)
-        )
+        val response = GattOperationResponse.CharacteristicChangedResponse(characteristic)
+        if (!_asyncOperationResponseBus.tryEmit(response)) {
+            Log.w(
+                TAG, "onCharacteristicChanged - _asyncOperationResponseFlow buffer" +
+                        " overflow! Outbound response will be dropped."
+            )
+        }
     }
 
     private fun <T> ReceiveChannel<T>.receiveAsSharedFlow(scope: CoroutineScope): SharedFlow<T> =
@@ -174,6 +183,8 @@ internal class ClientBluetoothGattCallback(scope: CoroutineScope) : BluetoothGat
 }
 
 //region Factory
-private fun <T> ClientBluetoothGattCallback.Companion.makeResponseChannel(): Channel<T> =
-    Channel(CONFLATED)
+private fun <T> ClientBluetoothGattCallback.Companion.makeResponseBus() = MutableSharedFlow<T>(
+    extraBufferCapacity = 1,
+    onBufferOverflow = BufferOverflow.DROP_OLDEST
+)
 //endregion
