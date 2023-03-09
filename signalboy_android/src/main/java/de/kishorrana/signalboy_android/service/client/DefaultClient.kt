@@ -30,7 +30,8 @@ private const val TAG = "SignalboyClient"
 internal class DefaultClient(
     context: Context,
     bluetoothAdapter: BluetoothAdapter,
-    parentJob: Job? = null
+    parentJob: Job? = null,
+    defaultDispatcher: CoroutineDispatcher = Dispatchers.Default
 ) : Client {
     // Reusing StateManager's state here.
     override val state: State
@@ -39,7 +40,7 @@ internal class DefaultClient(
         get() = stateManager.latestState
 
     private val scope = CoroutineScope(
-        Dispatchers.Default + Job(parentJob) + CoroutineName("Client")
+        defaultDispatcher + Job(parentJob) + CoroutineName("Client")
     )
 
     private val gattCallback = ClientBluetoothGattCallback(scope)
