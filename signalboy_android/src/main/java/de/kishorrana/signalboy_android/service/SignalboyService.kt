@@ -227,7 +227,7 @@ class SignalboyService : LifecycleService(), ISignalboyService {
             throw AlreadyConnectingException()
         }
 
-        connecting = async {
+        val connecting = async {
             try {
                 _latestState.value = State.Connecting
 
@@ -317,6 +317,9 @@ class SignalboyService : LifecycleService(), ISignalboyService {
                 throw err
             }
         }
+            .also { connecting = it }
+
+        return@coroutineScope connecting.join()
     }
 
     private suspend fun disconnectFromPeripheralAsync(disconnectCause: Throwable?) {
