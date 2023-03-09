@@ -87,6 +87,7 @@ class CompanionDeviceController(
             associationRequest,
             object : CompanionDeviceManager.Callback() {
 
+                @Deprecated("Deprecated in Java")
                 override fun onDeviceFound(intentSender: IntentSender) {
                     Log.i(TAG, "CompanionDeviceManager.Callback.onDeviceFound")
 

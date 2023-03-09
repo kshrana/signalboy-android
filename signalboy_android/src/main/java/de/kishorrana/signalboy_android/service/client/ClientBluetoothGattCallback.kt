@@ -81,6 +81,7 @@ internal class ClientBluetoothGattCallback(scope: CoroutineScope) : BluetoothGat
         )
     }
 
+    @Deprecated("Deprecated in Java")
     override fun onCharacteristicRead(
         gatt: BluetoothGatt,
         characteristic: BluetoothGattCharacteristic,
@@ -118,6 +119,7 @@ internal class ClientBluetoothGattCallback(scope: CoroutineScope) : BluetoothGat
         )
     }
 
+    @Deprecated("Deprecated in Java")
     override fun onCharacteristicChanged(
         gatt: BluetoothGatt,
         characteristic: BluetoothGattCharacteristic

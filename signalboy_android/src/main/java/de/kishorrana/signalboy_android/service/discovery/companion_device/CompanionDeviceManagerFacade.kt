@@ -69,6 +69,7 @@ internal class CompanionDeviceManagerFacade(
         companionDeviceManager.associate(
             associationRequest,
             object : CompanionDeviceManager.Callback() {
+                @Deprecated("Deprecated in Java")
                 override fun onDeviceFound(chooserLauncher: IntentSender) {
                     Log.i(TAG, "CompanionDeviceManager.Callback -> onDeviceFound")
 

@@ -23,12 +23,14 @@ class AssociateFragment : Fragment(), ActivityResultProxy {
 
     private var callback: ActivityResultProxy.Callback? = null
 
+    @Deprecated("Deprecated in Java")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // Headless fragment: s. https://luboganev.dev/blog/headless-fragments/
         retainInstance = true
     }
 
+    @Deprecated("Deprecated in Java")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         when (requestCode) {
             REQUEST_CODE_SELECT_DEVICE -> callback?.onActivityResult(resultCode, data)
