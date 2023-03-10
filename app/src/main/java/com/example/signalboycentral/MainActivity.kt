@@ -614,8 +614,7 @@ class MainActivity : AppCompatActivity(), ActivityCompat.OnRequestPermissionsRes
                                     serialController.connect()
                                     Log.i(TAG, "Success: SerialController is connected.")
                                 } catch (e: Exception) {
-                                    Log.e(TAG, "Failed to connect to Serial:", e)
-                                    cancel()
+                                    Log.w(TAG, "Failed to connect to Serial device:", e)
                                 }
                             }
 
