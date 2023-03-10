@@ -220,7 +220,7 @@ class SignalboyService : LifecycleService(), ISignalboyService {
     private suspend fun connectToPeripheral(strategy: ConnectionStrategy) = coroutineScope {
         Log.v(
             TAG,
-            "_connectToPeripheral(strategy=$strategy) – I'm working in thread: " +
+            "connectToPeripheral(strategy=$strategy) – I'm working in thread: " +
                     Thread.currentThread().name
         )
         if (connecting?.isActive == true) {
