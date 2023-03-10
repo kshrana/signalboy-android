@@ -619,12 +619,10 @@ class MainActivity : AppCompatActivity(), ActivityCompat.OnRequestPermissionsRes
                                 }
                             }
 
-//                        FixedDelayTestRunner().execute(signalboyService)
-//                        RandomDelayTestRunner().execute(signalboyService)
+//                            FixedDelayTestRunner().execute(signalboyService)
+//                            RandomDelayTestRunner().execute(signalboyService)
                             ScheduledEventsTestRunner(EventsSchedule.eventTimestamps)
                                 .execute(signalboyService, serialController)
-//                        ScheduledEventsTestRunner(EventsSchedule.event1_000Timestamps)
-//                            .execute(signalboyService)
                         } catch (exception: Exception) {
                             Log.e(TAG, "Testing run failed due to:", exception)
                         }
