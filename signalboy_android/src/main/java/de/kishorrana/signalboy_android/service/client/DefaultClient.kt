@@ -113,14 +113,14 @@ internal class DefaultClient(
     override suspend fun readGattCharacteristic(
         service: UUID,
         characteristic: UUID
-    ): ByteArray = executeGattOperation {
-        readCharacteristic(service, characteristic)
+    ): ByteArray = executeGattOperation("readGattCharacteristic (characteristic=$characteristic)") {
+        // Subscribe first, then dispatch async operation.
         val response = gattCallback.asyncOperationResponses
-            .mapNotNull { it as? CharacteristicReadResponse }
+            .onSubscription { readCharacteristic(service, characteristic) }
+            .filterIsInstance<CharacteristicReadResponse>()
             .first()
 
-        response.characteristic.ensureIdentity(service, characteristic)
-
+        response.characteristic.checkIdentity(service, characteristic)
         if (response.status != GATT_STATUS_SUCCESS)
             throw AsyncOperationFailedException(response.status)
 
@@ -140,12 +140,15 @@ internal class DefaultClient(
         characteristic: UUID,
         data: ByteArray,
         shouldWaitForResponse: Boolean
-    ) = executeGattOperation {
-        writeCharacteristic(service, characteristic, data, shouldWaitForResponse)
+    ) = executeGattOperation("writeGattCharacteristic (characteristic=$characteristic)") {
+        // Subscribe first, then dispatch async operation.
         val response = gattCallback.asyncOperationResponses
-            .mapNotNull { it as? CharacteristicWriteResponse }
+            .onSubscription {
+                writeCharacteristic(service, characteristic, data, shouldWaitForResponse)
+            }
+            .filterIsInstance<CharacteristicWriteResponse>()
             .first()
-        response.characteristic.ensureIdentity(service, characteristic)
+        response.characteristic.checkIdentity(service, characteristic)
 
         if (response.status != GATT_STATUS_SUCCESS)
             throw AsyncOperationFailedException(response.status)
@@ -156,13 +159,13 @@ internal class DefaultClient(
         characteristic: UUID,
         descriptor: UUID,
         data: ByteArray
-    ) = executeGattOperation {
-        writeDescriptor(service, characteristic, descriptor, data)
-
+    ) = executeGattOperation("writeGattDescriptor (characteristic=$characteristic)") {
+        // Subscribe first, then dispatch async operation.
         val response = gattCallback.asyncOperationResponses
-            .mapNotNull { it as? DescriptorWriteResponse }
+            .onSubscription { writeDescriptor(service, characteristic, descriptor, data) }
+            .filterIsInstance<DescriptorWriteResponse>()
             .first()
-        response.descriptor.ensureIdentity(service, characteristic, descriptor)
+        response.descriptor.checkIdentity(service, characteristic, descriptor)
 
         if (response.status != GATT_STATUS_SUCCESS)
             throw AsyncOperationFailedException(response.status)
@@ -174,7 +177,7 @@ internal class DefaultClient(
         onCharacteristicChanged: OnNotificationReceived
     ): NotificationSubscription.CancellationToken {
         writeGattClientConfigurationDescriptorAsync(service, characteristic, true)
-        executeGattOperation {
+        executeGattOperation("startNotify ($characteristic)") {
             setCharacteristicNotification(service, characteristic, true)
         }
 
@@ -210,7 +213,7 @@ internal class DefaultClient(
                         characteristicUUID,
                         false
                     )
-                    executeGattOperation {
+                    executeGattOperation("setCharacteristicNotification ($characteristicUUID)") {
                         setCharacteristicNotification(serviceUUID, characteristicUUID, false)
                     }
                 } catch (err: Throwable) {
@@ -258,14 +261,14 @@ internal class DefaultClient(
             }
             launch {
                 gattCallback.asyncOperationResponses
-                    .mapNotNull { it as? ServicesDiscoveredResponse }
+                    .filterIsInstance<ServicesDiscoveredResponse>()
                     .collect { (services) ->
                         stateManager.handleEvent(Event.OnGattServicesDiscovered(services))
                     }
             }
             launch {
                 gattCallback.asyncOperationResponses
-                    .mapNotNull { it as? CharacteristicChangedResponse }
+                    .filterIsInstance<CharacteristicChangedResponse>()
                     .collect { (bluetoothGattCharacteristic) ->
                         val serviceUUID = bluetoothGattCharacteristic.service.uuid
                         val characteristicUUID = bluetoothGattCharacteristic.uuid
@@ -286,7 +289,7 @@ internal class DefaultClient(
     }
     //endregion
 
-    private fun BluetoothGattCharacteristic.ensureIdentity(service: UUID, characteristic: UUID) {
+    private fun BluetoothGattCharacteristic.checkIdentity(service: UUID, characteristic: UUID) {
         if (service != this.service.uuid || characteristic != uuid)
             throw IllegalStateException(
                 "Received response for wrong characteristic. " +
@@ -295,7 +298,7 @@ internal class DefaultClient(
             )
     }
 
-    private fun BluetoothGattDescriptor.ensureIdentity(
+    private fun BluetoothGattDescriptor.checkIdentity(
         service: UUID,
         characteristic: UUID,
         descriptor: UUID
@@ -313,10 +316,13 @@ internal class DefaultClient(
      * does not feature a gatt-client or the gatt-client is currently not ready
      * for accepting operations.
      */
-    private suspend fun <T> executeGattOperation(block: suspend BluetoothGatt.() -> T): T {
+    private suspend fun <T> executeGattOperation(
+        tag: String,
+        block: suspend BluetoothGatt.() -> T
+    ): T {
 //        Log.d(
-//            TAG, "executeGattOperation($i) - schedule " +
-//                    "(operationQueue.isEmpty=${semaphore.isEmpty})"
+//            TAG, "executeGattOperation($tag) - schedule " +
+//                    "(semaphore.isEmpty=${semaphore.isEmpty})"
 //        )
 
         val result = try {
