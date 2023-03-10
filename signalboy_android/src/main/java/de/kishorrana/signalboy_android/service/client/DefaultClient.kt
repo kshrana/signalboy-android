@@ -21,8 +21,9 @@ import de.kishorrana.signalboy_android.service.client.util.writeDescriptor
 import de.kishorrana.signalboy_android.service.gatt.CLIENT_CONFIGURATION_DESCRIPTOR_UUID
 import de.kishorrana.signalboy_android.service.gatt.GATT_STATUS_SUCCESS
 import kotlinx.coroutines.*
-import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.util.*
 
 private const val TAG = "SignalboyClient"
@@ -47,13 +48,14 @@ internal class DefaultClient(
     private val stateManager = StateManager(context, bluetoothAdapter, gattCallback, scope)
 
     /**
-     * Channel is empty while no async-operation for BluetoothGatt is active.
+     * Mutex is locked while an async-operation for BluetoothGatt is ongoing.
      *
      * Background: [BluetoothGatt] will fail to execute its offered async-operations
      * (like [BluetoothGatt.readCharacteristic], [BluetoothGatt.writeCharacteristic], etc.)
-     * when attempting to start such operation, while
+     * when attempting to start such operation, while another such operation has been
+     * started but did not conclude.
      */
-    private val semaphore = Channel<Unit>(1)
+    private val mutex = Mutex()
 
     // First Pair being the key: <ServiceUUID, CharacteristicUUID>
     private val notificationSubscriptions =
@@ -69,7 +71,6 @@ internal class DefaultClient(
             triggerDisconnect()
         } finally {
             scope.cancel("Parent Client-instance will be destroyed.")
-            semaphore.close()
         }
     }
 
@@ -320,25 +321,22 @@ internal class DefaultClient(
         tag: String,
         block: suspend BluetoothGatt.() -> T
     ): T {
-//        Log.d(
-//            TAG, "executeGattOperation($tag) - schedule " +
-//                    "(semaphore.isEmpty=${semaphore.isEmpty})"
-//        )
+//        Log.d(TAG, "executeGattOperation($tag) - schedule (mutex.isLocked=${mutex.isLocked})")
 
-        val result = try {
-            // May suspend until BluetoothGatt is ready to execute the next operation.
-            semaphore.send(Unit)
-
-            withTimeout(3_000L) {
+        // May suspend until BluetoothGatt is ready to execute the next operation.
+        val result = mutex.withLock {
+            try {
+                withTimeout(3_000L) {
 //                Log.d(TAG, "executeGattOperation($i) - execute")
-                with(getGattClientOrThrow()) {
-                    block()
+                    with(getGattClientOrThrow()) {
+                        block()
+                    }
                 }
+            } catch (err: TimeoutCancellationException) {
+                throw IllegalStateException(
+                    "Execution of BluetoothGatt-operation (tag=$tag) timed out."
+                )
             }
-        } catch (err: TimeoutCancellationException) {
-            throw IllegalStateException("Execution of BluetoothGatt-operation timed out.")
-        } finally {
-            semaphore.tryReceive()
         }
 
         return result
