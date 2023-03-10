@@ -25,14 +25,22 @@ class ScheduledEventsTestRunner(val eventTimestamps: List<Long>) {
                 // non-blocking wait (up until target - threshold)
                 delay(max(timestamp - THRESHOLD, 0) - (now() - startTime))
                 // active wait (blocking thread) for accuracy
-                while(timestamp - (now() - startTime) > 0) {/* no-op */}
+                while (timestamp - (now() - startTime) > 0) {
+                    /* no-op */
+                }
 
                 Log.d(TAG, "now=${now() - startTime}")
                 // Notify event via Serial (for measuring latency)
                 if (serialController.isConnected) {
                     serialController.println("")
                 }
+
+                // Synced method. Will fallback to unsynced-method if
+                // time synchronization fails.
                 signalboyService.trySendEvent()
+
+                // Force unsynced-method (DEBUG)
+//                signalboyService._trySendEventForceUnsynced()
             }
         } catch (err: CancellationException) {
             // Could trigger additional actions here, e.g. print statistics.
