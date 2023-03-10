@@ -17,8 +17,9 @@ import com.example.signalboycentral.BuildConfig
 import com.hoho.android.usbserial.driver.UsbSerialPort
 import com.hoho.android.usbserial.driver.UsbSerialProber
 import com.hoho.android.usbserial.util.SerialInputOutputManager
-import kotlinx.coroutines.flow.*
-import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.first
 import java.io.IOException
 
 private const val INTENT_ACTION_GRANT_USB: String = BuildConfig.APPLICATION_ID + ".GRANT_USB"
@@ -108,11 +109,16 @@ class SerialController(
     fun disconnect() {
         isConnected = false
 
-        // TODO: Stop UsbIoManager
+        usbIoManager?.run {
+            listener = null
+            stop()
+        }
+        usbIoManager = null
 
         try {
             usbSerialPort?.close()
         } catch (ignored: IOException) {
+            /* no-op */
         }
         usbSerialPort = null
     }
@@ -165,7 +171,7 @@ class SerialController(
             throw IllegalStateException("Not connected.")
         }
 
-        Log.d(TAG, "Will write line to Serial: \"$string\"")
+        Log.v(TAG, "Will write line to Serial: \"$string\"")
         try {
             val str = string + '\n'
             val data = str.toByteArray()
