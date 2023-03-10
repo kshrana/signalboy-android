@@ -375,6 +375,14 @@ class SignalboyService : LifecycleService(), ISignalboyService {
         }
 
         if (isSynced && !forceUnsyncedMethod) {
+            if (fireDateTimestamp - now() <= 0) {
+                Log.e(
+                    TAG, "Failed to send message in the required timeframe! " +
+                            "Will discard message for unsent event."
+                )
+                return
+            }
+
             val data = fireDateTimestamp.toUInt().toByteArrayLE()
             client.writeGattCharacteristicAsync(TargetTimestampCharacteristic, data, false)
         } else {
